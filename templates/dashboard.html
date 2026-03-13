@@ -94,6 +94,39 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
 .c-btn-edit:hover{background:rgba(91,156,246,0.2);}
 .c-btn-del{background:rgba(240,96,96,0.08);border-color:rgba(240,96,96,0.2);color:var(--red);}
 .c-btn-del:hover{background:rgba(240,96,96,0.18);}
+.c-btn-run{background:rgba(200,240,74,0.12);border-color:rgba(200,240,74,0.35);color:var(--accent);font-weight:700;letter-spacing:0.04em;}
+.c-btn-run:hover{background:rgba(200,240,74,0.25);box-shadow:0 0 12px rgba(200,240,74,0.2);}
+
+/* ── Run Modal ── */
+.run-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);z-index:200;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.2s;}
+.run-overlay.open{opacity:1;pointer-events:all;}
+.run-modal{background:var(--card);border:1px solid var(--border2);border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,0.6);}
+.run-top{display:flex;align-items:center;justify-content:space-between;padding:20px 24px 16px;border-bottom:1px solid var(--border);}
+.run-title{font-family:var(--serif);font-size:1.1rem;font-weight:800;color:var(--accent);}
+.run-sub{font-size:0.75rem;color:var(--muted);margin-top:2px;}
+.run-body{padding:20px 24px;}
+.run-section{margin-bottom:20px;}
+.run-section-title{font-size:0.62rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+.run-field{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 14px;margin-bottom:8px;}
+.run-field-label{font-size:0.7rem;color:var(--muted);width:80px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.06em;}
+.run-field-val{font-family:var(--mono);font-size:0.88rem;color:var(--text);flex:1;word-break:break-all;}
+.run-field-val.masked{letter-spacing:0.15em;color:var(--muted);}
+.copy-btn{flex-shrink:0;padding:4px 12px;border-radius:6px;border:1px solid var(--border2);background:none;color:var(--muted);font-size:0.72rem;cursor:pointer;transition:all 0.15s;font-family:var(--sans);}
+.copy-btn:hover{background:rgba(200,240,74,0.1);color:var(--accent);border-color:rgba(200,240,74,0.3);}
+.copy-btn.copied{color:var(--green);border-color:rgba(61,255,160,0.3);background:rgba(61,255,160,0.08);}
+.show-pass-btn{flex-shrink:0;padding:4px 10px;border-radius:6px;border:1px solid var(--border2);background:none;color:var(--muted);font-size:0.72rem;cursor:pointer;transition:all 0.15s;}
+.show-pass-btn:hover{color:var(--text);}
+.run-url-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:13px;border-radius:10px;border:none;background:var(--accent);color:#0c0e15;font-family:var(--serif);font-size:1rem;font-weight:800;cursor:pointer;transition:all 0.2s;margin-bottom:12px;letter-spacing:0.02em;}
+.run-url-btn:hover{background:#d4f55a;box-shadow:0 0 24px rgba(200,240,74,0.35);}
+.run-sq-row{display:flex;align-items:flex-start;gap:10px;background:rgba(167,139,250,0.06);border:1px solid rgba(167,139,250,0.15);border-radius:9px;padding:11px 14px;margin-bottom:8px;}
+.run-sq-q{flex:1;}
+.run-sq-q-text{font-size:0.78rem;color:var(--muted);margin-bottom:4px;line-height:1.4;}
+.run-sq-a{font-family:var(--mono);font-size:0.9rem;color:var(--purple);font-weight:600;}
+.run-step{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.8rem;color:var(--muted);}
+.run-step:last-child{border:none;}
+.run-step-n{width:22px;height:22px;border-radius:50%;background:rgba(200,240,74,0.1);border:1px solid rgba(200,240,74,0.2);color:var(--accent);font-size:0.7rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
+.run-step-active .run-step-n{background:var(--accent);color:#0c0e15;}
+.run-step-text{color:var(--text);line-height:1.5;}
 
 /* Empty */
 .empty{text-align:center;padding:70px 20px;color:var(--muted);}
@@ -275,6 +308,60 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
   </div>
 </div>
 
+<!-- ═══ RUN MODAL ══════════════════════════════════════════════════════════ -->
+<div class="run-overlay" id="run-overlay">
+  <div class="run-modal">
+    <div class="run-top">
+      <div>
+        <div class="run-title">▶ Run Login — <span id="run-label">—</span></div>
+        <div class="run-sub">Follow the steps below to complete login</div>
+      </div>
+      <button class="m-close" onclick="closeRun()">✕</button>
+    </div>
+    <div class="run-body">
+
+      <!-- Step guide -->
+      <div class="run-section">
+        <div class="run-section-title">Steps</div>
+        <div class="run-step run-step-active"><div class="run-step-n">1</div><div class="run-step-text">Click <b>Open Login Page</b> below — the target site opens in a new tab</div></div>
+        <div class="run-step"><div class="run-step-n">2</div><div class="run-step-text">Copy your <b>Username</b> and <b>Password</b> below and paste them into the site</div></div>
+        <div class="run-step"><div class="run-step-n">3</div><div class="run-step-text">Solve the <b>captcha</b> and click Sign In</div></div>
+        <div class="run-step"><div class="run-step-n">4</div><div class="run-step-text">When the site asks a <b>security question</b>, find it below and copy the answer</div></div>
+        <div class="run-step"><div class="run-step-n">5</div><div class="run-step-text">You're in — close this panel and update the status to <b>Completed</b></div></div>
+      </div>
+
+      <!-- Open URL button -->
+      <button class="run-url-btn" id="run-url-btn" onclick="openTargetUrl()">
+        <span>🌐</span> <span>Open Login Page</span>
+      </button>
+
+      <!-- Credentials -->
+      <div class="run-section">
+        <div class="run-section-title">Credentials</div>
+        <div class="run-field">
+          <span class="run-field-label">Username</span>
+          <span class="run-field-val" id="run-username">—</span>
+          <button class="copy-btn" onclick="copyField('run-username',this)">Copy</button>
+        </div>
+        <div class="run-field">
+          <span class="run-field-label">Password</span>
+          <span class="run-field-val masked" id="run-password-disp">••••••••</span>
+          <button class="show-pass-btn" id="run-show-btn" onclick="toggleRunPass()">Show</button>
+          <button class="copy-btn" onclick="copyRunPass(this)">Copy</button>
+        </div>
+      </div>
+
+      <!-- Security Questions -->
+      <div class="run-section" id="run-sq-section">
+        <div class="run-section-title">Security Questions & Answers</div>
+        <div id="run-sq-list"></div>
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:6px">When the site asks a security question, find it here and copy the answer.</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <script>
 // SQ_SHORT replaced by dynamic question text from sel_q1/sel_q2/sel_q3
 let all = [];
@@ -338,6 +425,7 @@ function renderGrid(list){
       <div class="card-footer">
         <div class="card-date">${created}${completed}</div>
         <div class="card-btns">
+          <button class="c-btn c-btn-run" onclick="event.stopPropagation();openRun(${l.id})">▶ Run</button>
           <button class="c-btn c-btn-edit" onclick="event.stopPropagation();openEdit(${l.id})">Edit</button>
           <button class="c-btn c-btn-del"  onclick="event.stopPropagation();deleteLogin(${l.id})">Del</button>
         </div>
@@ -419,6 +507,192 @@ function toast(msg,isErr=false){
 }
 function x(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 document.getElementById('overlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal();});
+document.getElementById('run-overlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeRun();});
+
+/* ── Run Modal ── */
+let _runPass = '';
+let _runUsername = '';
+let _runData = {};
+let _targetUrl = '{{ target_url }}';
+
+function openRun(id){
+  const l = all.find(z=>z.id===id); if(!l) return;
+  _runPass = l.password || '';
+  _runUsername = l.username || '';
+  _runData = l;
+  document.getElementById('run-label').textContent = l.label || 'Login';
+  document.getElementById('run-username').textContent = l.username || '';
+  document.getElementById('run-password-disp').textContent = '••••••••';
+  document.getElementById('run-password-disp').classList.add('masked');
+  document.getElementById('run-show-btn').textContent = 'Show';
+
+  // Build security question rows
+  const pairs = [
+    [l.sel_q1, l.ans_q1],
+    [l.sel_q2, l.ans_q2],
+    [l.sel_q3, l.ans_q3],
+  ].filter(([q,a]) => q || a);
+
+  const sqList = document.getElementById('run-sq-list');
+  if(pairs.length){
+    sqList.innerHTML = pairs.map(([q,a],i) => `
+      <div class="run-sq-row">
+        <div class="run-sq-q">
+          <div class="run-sq-q-text">${x(q||'Security Question '+(i+1))}</div>
+          <div class="run-sq-a" id="run-sq-a-${i}">${x(a||'—')}</div>
+        </div>
+        <button class="copy-btn" onclick="copyRunSq(${i},'${(a||'').replace(/'/g,"\'")}',this)">Copy</button>
+      </div>`).join('');
+    document.getElementById('run-sq-section').style.display='';
+  } else {
+    document.getElementById('run-sq-section').style.display='none';
+  }
+
+  document.getElementById('run-overlay').classList.add('open');
+}
+
+function closeRun(){
+  document.getElementById('run-overlay').classList.remove('open');
+}
+
+async function openTargetUrl(){
+  const btn = document.getElementById('run-url-btn');
+
+  // Try to send to Chrome extension first
+  const sent = await sendToExtension();
+
+  if (sent) {
+    btn.innerHTML = '✓ Extension is auto-filling — switch to the new tab';
+    btn.style.cssText = 'background:rgba(200,240,74,0.15);color:var(--accent);border:1px solid rgba(200,240,74,0.3)';
+  } else {
+    // Fallback: just open the URL
+    window.open(_targetUrl, '_blank');
+    btn.innerHTML = '✓ Page Opened — fill credentials manually from below';
+    btn.style.cssText = 'background:rgba(91,156,246,0.1);color:var(--blue);border:1px solid rgba(91,156,246,0.25)';
+  }
+
+  setTimeout(()=>{
+    btn.innerHTML = '<span>🌐</span> <span>Run Again</span>';
+    btn.style.cssText = '';
+  }, 5000);
+}
+
+async function sendToExtension() {
+  // Send credentials to the Vault Chrome extension
+  // Extension ID is stored in localStorage after first pairing
+  const extId = localStorage.getItem('vault_ext_id');
+
+  const payload = {
+    action: "run_login",
+    data: {
+      username: _runUsername,
+      password: _runPass,
+      sel_q1: _runData.sel_q1 || '',
+      ans_q1: _runData.ans_q1 || '',
+      sel_q2: _runData.sel_q2 || '',
+      ans_q2: _runData.ans_q2 || '',
+      sel_q3: _runData.sel_q3 || '',
+      ans_q3: _runData.ans_q3 || '',
+      target_url: _targetUrl
+    }
+  };
+
+  if (extId) {
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(extId, payload, (r) => {
+          if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+          else resolve(r);
+        });
+      });
+      return true;
+    } catch(e) {
+      console.warn('Extension not found:', e);
+    }
+  }
+
+  // Try broadcasting to any installed Vault extension
+  // User needs to pair once via the extension popup
+  showExtensionPrompt();
+  return false;
+}
+
+function showExtensionPrompt() {
+  const existing = document.getElementById('ext-prompt');
+  if (existing) { existing.style.display = ''; return; }
+
+  const el = document.createElement('div');
+  el.id = 'ext-prompt';
+  el.style.cssText = `
+    margin-top:12px;background:rgba(200,240,74,0.06);
+    border:1px solid rgba(200,240,74,0.2);border-radius:10px;
+    padding:14px 16px;font-size:0.78rem;color:var(--muted);line-height:1.6
+  `;
+  el.innerHTML = `
+    <div style="color:var(--accent);font-weight:700;margin-bottom:6px">⚡ Enable Auto-Fill</div>
+    Install the <b>Credential Vault</b> Chrome Extension to auto-fill username, password and security answers automatically.
+    <br><br>
+    <input id="ext-id-input" placeholder="Paste Extension ID here after installing"
+      style="width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:7px;
+             padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:0.78rem;
+             outline:none;margin-bottom:8px">
+    <button onclick="saveExtId()" style="padding:6px 16px;border-radius:7px;border:1px solid rgba(200,240,74,0.3);
+      background:rgba(200,240,74,0.1);color:var(--accent);cursor:pointer;font-size:0.78rem;font-weight:600">
+      Save Extension ID
+    </button>
+    <div style="font-size:0.68rem;color:var(--muted2);margin-top:6px">
+      Find Extension ID: Chrome → chrome://extensions → turn on Developer Mode → copy the ID
+    </div>
+  `;
+  document.getElementById('run-body-extra')?.appendChild(el) ||
+    document.querySelector('.run-body').appendChild(el);
+}
+
+function saveExtId() {
+  const id = document.getElementById('ext-id-input')?.value.trim();
+  if (id) {
+    localStorage.setItem('vault_ext_id', id);
+    document.getElementById('ext-prompt').innerHTML =
+      '<span style="color:var(--green)">✓ Extension ID saved! Click Run Again to auto-fill.</span>';
+    setTimeout(() => document.getElementById('ext-prompt')?.remove(), 3000);
+  }
+}
+
+function toggleRunPass(){
+  const el = document.getElementById('run-password-disp');
+  const btn = document.getElementById('run-show-btn');
+  if(el.classList.contains('masked')){
+    el.textContent = _runPass;
+    el.classList.remove('masked');
+    btn.textContent = 'Hide';
+  } else {
+    el.textContent = '••••••••';
+    el.classList.add('masked');
+    btn.textContent = 'Show';
+  }
+}
+
+function copyField(id, btn){
+  const val = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(val).then(()=>{
+    btn.textContent='Copied!'; btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);
+  });
+}
+
+function copyRunPass(btn){
+  navigator.clipboard.writeText(_runPass).then(()=>{
+    btn.textContent='Copied!'; btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);
+  });
+}
+
+function copyRunSq(i, val, btn){
+  navigator.clipboard.writeText(val).then(()=>{
+    btn.textContent='Copied!'; btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);
+  });
+}
 </script>
 </body>
 </html>
