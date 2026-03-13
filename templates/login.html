@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login — Credential Vault</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Outfit:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0e15;--card:#13161f;--border:#1e2535;--border2:#2a3250;
+  --accent:#c8f04a;--blue:#5b9cf6;--red:#f06060;--muted:#5a6480;
+  --text:#dde3f0;--sans:'Outfit',sans-serif;--serif:'Syne',sans-serif;--mono:'Fira Code',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(200,240,74,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(200,240,74,0.025) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;}
+.card{position:relative;z-index:1;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:44px 40px 40px;width:420px;max-width:95vw;text-align:center;}
+.vault-icon{font-size:2.6rem;margin-bottom:20px;display:block;}
+h1{font-family:var(--serif);font-size:1.7rem;font-weight:800;margin-bottom:6px;}
+.sub{font-size:0.82rem;color:var(--muted);margin-bottom:32px;}
+.field{text-align:left;margin-bottom:18px;}
+.field label{display:block;font-size:0.7rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+.field input{width:100%;background:#0d1018;border:1px solid var(--border2);border-radius:10px;color:var(--text);font-family:var(--mono);font-size:0.9rem;padding:12px 16px;outline:none;transition:border-color 0.2s,box-shadow 0.2s;letter-spacing:0.08em;}
+.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(200,240,74,0.09);}
+.btn{width:100%;padding:13px;border-radius:10px;border:none;background:var(--accent);color:#0c0e15;font-family:var(--serif);font-size:1rem;font-weight:700;cursor:pointer;transition:all 0.2s;margin-top:4px;}
+.btn:hover{background:#b8e030;transform:translateY(-1px);box-shadow:0 6px 20px rgba(200,240,74,0.25);}
+.btn:disabled{opacity:0.45;cursor:not-allowed;transform:none;}
+.err{background:rgba(240,96,96,0.1);border:1px solid rgba(240,96,96,0.3);color:var(--red);border-radius:8px;padding:10px 14px;font-size:0.82rem;margin-bottom:14px;display:none;}
+.admin-link{margin-top:24px;font-size:0.72rem;color:var(--muted);}
+.admin-link a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--border2);padding-bottom:1px;transition:color 0.2s;}
+.admin-link a:hover{color:var(--text);}
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="vault-icon">🔐</span>
+  <h1>Credential Vault</h1>
+  <p class="sub">Enter your access key to continue</p>
+  <div class="err" id="err"></div>
+  <div class="field">
+    <label>Access Key</label>
+    <input id="key-input" type="password" placeholder="VLT-••••••••••••" autofocus autocomplete="off">
+  </div>
+  <button class="btn" id="btn" onclick="doLogin()">Enter Vault</button>
+  <div class="admin-link"><a href="/admin/login">Admin panel →</a></div>
+</div>
+<script>
+document.getElementById('key-input').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+async function doLogin(){
+  const key = document.getElementById('key-input').value.trim();
+  const err = document.getElementById('err');
+  const btn = document.getElementById('btn');
+  err.style.display='none';
+  if(!key){err.textContent='Please enter your access key.';err.style.display='block';return;}
+  btn.disabled=true; btn.textContent='Verifying…';
+  const res = await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_key:key})});
+  const d = await res.json();
+  if(d.ok){ window.location.href='/dashboard'; }
+  else { err.textContent=d.error||'Invalid key.'; err.style.display='block'; btn.disabled=false; btn.textContent='Enter Vault'; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Credential Vault</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Outfit:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0e15;--surface:#0f1118;--card:#13161f;--border:#1e2535;--border2:#2a3250;
+  --accent:#c8f04a;--blue:#5b9cf6;--red:#f06060;--green:#3dffa0;--orange:#ff9a3c;--purple:#a78bfa;
+  --muted:#5a6480;--muted2:#3a4060;--text:#dde3f0;
+  --sans:'Outfit',sans-serif;--serif:'Syne',sans-serif;--mono:'Fira Code',monospace;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(200,240,74,0.018) 1px,transparent 1px),linear-gradient(90deg,rgba(200,240,74,0.018) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;z-index:0;}
+header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:0 36px;height:60px;background:rgba(12,14,21,0.9);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);}
+.logo{font-family:var(--serif);font-size:1rem;font-weight:800;color:var(--accent);}
+.admin-tag{background:rgba(200,240,74,0.1);border:1px solid rgba(200,240,74,0.25);color:var(--accent);font-family:var(--mono);font-size:0.6rem;padding:2px 10px;border-radius:4px;letter-spacing:0.1em;text-transform:uppercase;margin-left:10px;}
+.logout{padding:5px 14px;border-radius:7px;border:1px solid var(--border2);background:none;color:var(--muted);font-family:var(--sans);font-size:0.75rem;cursor:pointer;text-decoration:none;transition:all 0.2s;}
+.logout:hover{color:var(--red);border-color:rgba(240,96,96,0.4);}
+
+.page{position:relative;z-index:1;max-width:1340px;margin:0 auto;padding:36px 28px 80px;}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;margin-bottom:28px;}
+.tab{padding:8px 20px;border-radius:8px;border:1px solid var(--border);background:none;color:var(--muted);font-family:var(--mono);font-size:0.68rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:all 0.2s;}
+.tab.active{background:rgba(200,240,74,0.08);border-color:var(--accent);color:var(--accent);}
+.tab:hover:not(.active){color:var(--text);}
+.tab-pane{display:none;}
+.tab-pane.active{display:block;}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px;}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 18px;}
+.stat-n{font-family:var(--serif);font-size:1.9rem;font-weight:800;line-height:1;}
+.stat-l{font-size:0.62rem;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:0.08em;}
+
+/* Toolbar */
+.toolbar{display:flex;gap:10px;margin-bottom:18px;align-items:center;flex-wrap:wrap;}
+.search-wrap{flex:1;min-width:180px;position:relative;}
+.search-wrap input{width:100%;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 14px 9px 34px;font-family:var(--sans);font-size:0.85rem;color:var(--text);outline:none;transition:border-color 0.2s;}
+.search-wrap input:focus{border-color:var(--accent);}
+.si{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none;}
+.new-key-btn{padding:9px 20px;border-radius:9px;border:none;background:var(--accent);color:#0c0e15;font-family:var(--serif);font-size:0.9rem;font-weight:700;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+.new-key-btn:hover{background:#b8e030;transform:translateY(-1px);}
+
+/* Keys table */
+.table-wrap{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+table{width:100%;border-collapse:collapse;}
+th{font-family:var(--mono);font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);padding:10px 16px;text-align:left;border-bottom:1px solid var(--border);background:var(--surface);}
+td{padding:12px 16px;font-size:0.82rem;border-bottom:1px solid rgba(30,37,53,0.5);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:rgba(200,240,74,0.012);}
+.mono-cell{font-family:var(--mono);font-size:0.72rem;}
+.empty-row{text-align:center;padding:40px;color:var(--muted);font-family:var(--mono);font-size:0.72rem;}
+
+/* Pills */
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-family:var(--mono);font-size:0.58rem;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;}
+.p-active  {background:rgba(61,255,160,0.1);color:var(--green);}
+.p-inactive{background:rgba(90,100,128,0.2);color:var(--muted);}
+.p-expired {background:rgba(240,96,96,0.1);color:var(--red);}
+.p-pending {background:rgba(90,100,128,0.2);color:var(--muted);}
+.p-inprog  {background:rgba(91,156,246,0.15);color:var(--blue);}
+.p-done    {background:rgba(61,255,160,0.12);color:var(--green);}
+.p-failed  {background:rgba(240,96,96,0.12);color:var(--red);}
+
+/* Row action btns */
+.r-btn{padding:4px 10px;border-radius:5px;border:none;font-family:var(--mono);font-size:0.58rem;letter-spacing:0.06em;cursor:pointer;transition:background 0.15s;text-transform:uppercase;}
+.r-view{background:rgba(91,156,246,0.12);color:var(--blue);}
+.r-view:hover{background:rgba(91,156,246,0.25);}
+.r-toggle{background:rgba(200,240,74,0.1);color:var(--accent);}
+.r-toggle:hover{background:rgba(200,240,74,0.2);}
+.r-del{background:rgba(240,96,96,0.08);color:var(--red);}
+.r-del:hover{background:rgba(240,96,96,0.18);}
+
+/* Modal */
+.overlay{position:fixed;inset:0;background:rgba(5,6,12,0.82);backdrop-filter:blur(8px);z-index:200;display:none;align-items:center;justify-content:center;padding:20px;}
+.overlay.open{display:flex;}
+.modal{background:var(--card);border:1px solid var(--border2);border-radius:18px;width:580px;max-width:100%;max-height:90vh;overflow-y:auto;animation:mi 0.25s cubic-bezier(0.34,1.56,0.64,1);}
+@keyframes mi{from{transform:scale(0.9) translateY(20px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}
+.m-top{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--card);z-index:1;}
+.m-title{font-family:var(--serif);font-size:1.1rem;font-weight:800;}
+.m-close{background:var(--border);border:none;color:var(--muted);width:28px;height:28px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;}
+.m-close:hover{background:var(--red);color:#fff;}
+.m-body{padding:22px 24px;}
+.m-foot{padding:14px 24px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--card);}
+
+.f{margin-bottom:14px;}
+.f label{display:block;font-size:0.65rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;}
+.f input,.f textarea{width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:0.88rem;padding:10px 13px;outline:none;transition:border-color 0.2s;}
+.f input:focus,.f textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(200,240,74,0.07);}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+/* Key reveal box */
+.key-reveal{background:rgba(61,255,160,0.06);border:1px solid rgba(61,255,160,0.2);border-radius:10px;padding:16px 20px;margin-bottom:18px;}
+.key-reveal-label{font-size:0.62rem;color:var(--green);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;}
+.key-reveal-val{font-family:var(--mono);font-size:1rem;color:var(--green);word-break:break-all;letter-spacing:0.04em;}
+.key-reveal-warn{font-size:0.72rem;color:var(--muted);margin-top:8px;}
+.copy-btn{margin-top:10px;padding:7px 16px;border-radius:7px;border:1px solid rgba(61,255,160,0.3);background:rgba(61,255,160,0.1);color:var(--green);font-family:var(--mono);font-size:0.68rem;cursor:pointer;transition:all 0.2s;}
+.copy-btn:hover{background:rgba(61,255,160,0.2);}
+
+.mf-btn{padding:10px 22px;border-radius:9px;border:none;font-family:var(--serif);font-size:0.9rem;font-weight:700;cursor:pointer;transition:all 0.2s;}
+.mf-cancel{background:var(--border);color:var(--muted);}
+.mf-cancel:hover{color:var(--text);}
+.mf-save{background:var(--accent);color:#0c0e15;}
+.mf-save:hover{background:#b8e030;transform:translateY(-1px);}
+
+/* Log */
+.log-action{font-family:var(--mono);font-size:0.72rem;}
+
+/* Toast */
+.toast{position:fixed;bottom:26px;right:26px;z-index:999;background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:11px 18px;font-size:0.8rem;display:flex;align-items:center;gap:9px;box-shadow:0 8px 28px rgba(0,0,0,0.5);transform:translateY(80px);opacity:0;transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);pointer-events:none;}
+.toast.show{transform:translateY(0);opacity:1;}
+.td{width:8px;height:8px;border-radius:50%;background:var(--accent);}
+
+@media(max-width:800px){.stats{grid-template-columns:1fr 1fr};}
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;align-items:center">
+    <div class="logo">🔐 Credential Vault</div>
+    <span class="admin-tag">Admin</span>
+  </div>
+  <a href="/admin/logout" class="logout">Log out</a>
+</header>
+
+<div class="page">
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat"><div class="stat-n" id="st-keys" style="color:var(--accent)">—</div><div class="stat-l">Total Keys</div></div>
+    <div class="stat"><div class="stat-n" id="st-active" style="color:var(--green)">—</div><div class="stat-l">Active Keys</div></div>
+    <div class="stat"><div class="stat-n" id="st-logins" style="color:var(--blue)">—</div><div class="stat-l">Total Logins</div></div>
+    <div class="stat"><div class="stat-n" id="st-done" style="color:var(--green)">—</div><div class="stat-l">Completed</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('keys',this)">Access Keys</button>
+    <button class="tab" onclick="switchTab('logs',this)">Audit Logs</button>
+  </div>
+
+  <!-- Keys Tab -->
+  <div class="tab-pane active" id="pane-keys">
+    <div class="toolbar">
+      <div class="search-wrap">
+        <span class="si">⌕</span>
+        <input id="key-search" placeholder="Search by owner or email…" oninput="filterKeys()">
+      </div>
+      <button class="new-key-btn" onclick="openNewKey()">＋ Generate Access Key</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Key Preview</th><th>Owner</th><th>Email</th><th>Status</th><th>Logins</th><th>Expires</th><th>Actions</th></tr></thead>
+        <tbody id="keys-tbody"><tr><td colspan="8" class="empty-row">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Logs Tab -->
+  <div class="tab-pane" id="pane-logs">
+    <div class="toolbar">
+      <div class="search-wrap">
+        <span class="si">⌕</span>
+        <input id="log-search" placeholder="Search logs…" oninput="filterLogs()">
+      </div>
+      <button class="new-key-btn" style="background:var(--border2);color:var(--text)" onclick="loadLogs()">↻ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Time</th><th>Owner</th><th>Action</th><th>Detail</th><th>IP</th></tr></thead>
+        <tbody id="logs-tbody"><tr><td colspan="5" class="empty-row">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"><div class="td"></div><span id="toast-msg"></span></div>
+
+<!-- ═══ NEW KEY MODAL ════════════════════════════════════════════════════ -->
+<div class="overlay" id="ov-new">
+  <div class="modal">
+    <div class="m-top"><div class="m-title">Generate Access Key</div><button class="m-close" onclick="closeNew()">✕</button></div>
+    <div class="m-body">
+      <div id="key-reveal-area" style="display:none">
+        <div class="key-reveal">
+          <div class="key-reveal-label">🔑 New Access Key — copy now!</div>
+          <div class="key-reveal-val" id="new-key-val">—</div>
+          <div class="key-reveal-warn">This key is shown only once. Share it with the user immediately.</div>
+          <button class="copy-btn" onclick="copyKey()">📋 Copy to clipboard</button>
+        </div>
+      </div>
+      <div id="new-key-form">
+        <div class="g2">
+          <div class="f"><label>Owner Name *</label><input id="nk-name" placeholder="John Smith"></div>
+          <div class="f"><label>Owner Email</label><input id="nk-email" type="email" placeholder="john@example.com"></div>
+        </div>
+        <div class="f"><label>Expires (optional)</label><input id="nk-exp" type="datetime-local"></div>
+        <div class="f"><label>Notes</label><textarea id="nk-notes" rows="2" placeholder="Optional notes…"></textarea></div>
+      </div>
+    </div>
+    <div class="m-foot" id="new-key-foot">
+      <button class="mf-btn mf-cancel" onclick="closeNew()">Cancel</button>
+      <button class="mf-btn mf-save" id="gen-btn" onclick="generateKey()">Generate Key</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ VIEW LOGINS MODAL ════════════════════════════════════════════════ -->
+<div class="overlay" id="ov-logins">
+  <div class="modal" style="width:700px">
+    <div class="m-top"><div class="m-title" id="logins-title">Logins</div><button class="m-close" onclick="closeLogins()">✕</button></div>
+    <div class="m-body" id="logins-body">Loading…</div>
+    <div class="m-foot"><button class="mf-btn mf-cancel" onclick="closeLogins()">Close</button></div>
+  </div>
+</div>
+
+<script>
+let allKeys=[], allLogs=[];
+
+(async()=>{ await loadStats(); await loadKeys(); loadLogs(); })();
+
+function switchTab(name,btn){
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('pane-'+name).classList.add('active');
+  btn.classList.add('active');
+}
+
+async function loadStats(){
+  const r=await fetch('/api/admin/stats'); const s=await r.json();
+  document.getElementById('st-keys').textContent=s.total_keys;
+  document.getElementById('st-active').textContent=s.active_keys;
+  document.getElementById('st-logins').textContent=s.total_logins;
+  document.getElementById('st-done').textContent=s.completed;
+}
+
+async function loadKeys(){
+  const r=await fetch('/api/admin/keys'); allKeys=await r.json(); filterKeys();
+}
+
+function filterKeys(){
+  const q=document.getElementById('key-search').value.toLowerCase();
+  const list=allKeys.filter(k=>!q||(k.owner_name||'').toLowerCase().includes(q)||(k.owner_email||'').toLowerCase().includes(q));
+  renderKeys(list);
+}
+
+function renderKeys(list){
+  const tb=document.getElementById('keys-tbody');
+  if(!list.length){tb.innerHTML='<tr><td colspan="8" class="empty-row">No access keys yet.</td></tr>';return;}
+  const now=new Date();
+  tb.innerHTML=list.map(k=>{
+    const expired = k.expires_at && new Date(k.expires_at)<now;
+    const statusPill = expired ? '<span class="pill p-expired">Expired</span>' :
+                       k.is_active ? '<span class="pill p-active">Active</span>' : '<span class="pill p-inactive">Disabled</span>';
+    const exp = k.expires_at ? k.expires_at.slice(0,10) : '—';
+    return `<tr>
+      <td class="mono-cell">#${k.id}</td>
+      <td class="mono-cell" style="color:var(--accent)">${x(k.key_preview)}</td>
+      <td style="font-weight:600">${x(k.owner_name)}</td>
+      <td style="color:var(--muted);font-size:0.78rem">${x(k.owner_email||'—')}</td>
+      <td>${statusPill}</td>
+      <td><span style="background:rgba(91,156,246,0.1);color:var(--blue);font-family:var(--mono);font-size:0.68rem;padding:2px 8px;border-radius:99px">${k.login_count||0}</span></td>
+      <td style="font-size:0.78rem;color:var(--muted)">${exp}</td>
+      <td>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <button class="r-btn r-view" onclick="viewLogins(${k.id},'${x(k.owner_name)}')">Logins</button>
+          <button class="r-btn r-toggle" onclick="toggleKey(${k.id},${!k.is_active})">${k.is_active?'Disable':'Enable'}</button>
+          <button class="r-btn r-del" onclick="deleteKey(${k.id})">Delete</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ── New Key Modal ── */
+function openNewKey(){
+  document.getElementById('ov-new').classList.add('open');
+  document.getElementById('key-reveal-area').style.display='none';
+  document.getElementById('new-key-form').style.display='block';
+  document.getElementById('gen-btn').style.display='';
+  document.getElementById('new-key-val').textContent='—';
+  ['nk-name','nk-email','nk-exp','nk-notes'].forEach(id=>document.getElementById(id).value='');
+}
+function closeNew(){document.getElementById('ov-new').classList.remove('open');}
+
+async function generateKey(){
+  const name=document.getElementById('nk-name').value.trim();
+  if(!name){toast('Owner name required',true);return;}
+  const data={
+    owner_name:name,
+    owner_email:document.getElementById('nk-email').value.trim(),
+    expires_at:document.getElementById('nk-exp').value||null,
+    notes:document.getElementById('nk-notes').value.trim()
+  };
+  const res=await fetch('/api/admin/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  const d=await res.json();
+  if(!d.ok){toast('Error generating key',true);return;}
+  document.getElementById('new-key-val').textContent=d.raw_key;
+  document.getElementById('key-reveal-area').style.display='block';
+  document.getElementById('new-key-form').style.display='none';
+  document.getElementById('gen-btn').style.display='none';
+  document.getElementById('new-key-foot').innerHTML='<button class="mf-btn mf-cancel" onclick="closeNew();loadStats();loadKeys()">Done</button>';
+}
+function copyKey(){
+  navigator.clipboard.writeText(document.getElementById('new-key-val').textContent);
+  toast('Key copied to clipboard!');
+}
+
+async function toggleKey(id,val){
+  const k=allKeys.find(z=>z.id===id); if(!k)return;
+  await fetch(`/api/admin/keys/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({...k,is_active:val})});
+  toast(val?'Key enabled':'Key disabled'); await loadKeys();
+}
+async function deleteKey(id){
+  if(!confirm('Delete this key and ALL associated logins? This cannot be undone.'))return;
+  await fetch(`/api/admin/keys/${id}`,{method:'DELETE'});
+  toast('Key deleted'); await loadStats(); await loadKeys();
+}
+
+/* ── View logins modal ── */
+async function viewLogins(kid,name){
+  document.getElementById('logins-title').textContent=`Logins — ${name}`;
+  document.getElementById('logins-body').innerHTML='<div style="text-align:center;padding:30px;color:var(--muted)">Loading…</div>';
+  document.getElementById('ov-logins').classList.add('open');
+  const res=await fetch(`/api/admin/keys/${kid}/logins`);
+  const logins=await res.json();
+  const STATUS_LABELS={pending:'Pending',in_progress:'In Progress',completed:'Completed',failed:'Failed'};
+  const pillC={pending:'p-pending',in_progress:'p-inprog',completed:'p-done',failed:'p-failed'};
+  if(!logins.length){document.getElementById('logins-body').innerHTML='<p style="color:var(--muted);text-align:center;padding:30px;">No logins saved yet.</p>';return;}
+  document.getElementById('logins-body').innerHTML=`
+    <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+      <thead><tr>
+        <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Label</th>
+        <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Username</th>
+        <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Status</th>
+        <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Date</th>
+        <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:0.58rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em">Completed</th>
+      </tr></thead>
+      <tbody>${logins.map(l=>`<tr>
+        <td style="padding:10px;border-bottom:1px solid rgba(30,37,53,0.4);font-weight:600">${x(l.label)}</td>
+        <td style="padding:10px;border-bottom:1px solid rgba(30,37,53,0.4);font-family:var(--mono);font-size:0.72rem;color:var(--blue)">${x(l.username)}</td>
+        <td style="padding:10px;border-bottom:1px solid rgba(30,37,53,0.4)"><span class="pill ${pillC[l.status]||'p-pending'}">${STATUS_LABELS[l.status]||l.status}</span></td>
+        <td style="padding:10px;border-bottom:1px solid rgba(30,37,53,0.4);color:var(--muted);font-size:0.75rem">${(l.target_date||'—')}</td>
+        <td style="padding:10px;border-bottom:1px solid rgba(30,37,53,0.4);color:var(--green);font-size:0.72rem;font-family:var(--mono)">${l.completed_at?(l.completed_at.slice(0,16).replace('T',' ')):'—'}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+}
+function closeLogins(){document.getElementById('ov-logins').classList.remove('open');}
+
+/* ── Logs ── */
+async function loadLogs(){
+  const r=await fetch('/api/admin/logs'); allLogs=await r.json(); filterLogs();
+}
+function filterLogs(){
+  const q=document.getElementById('log-search').value.toLowerCase();
+  const list=allLogs.filter(l=>!q||(l.action||'').toLowerCase().includes(q)||(l.owner_name||'').toLowerCase().includes(q)||(l.detail||'').toLowerCase().includes(q));
+  const tb=document.getElementById('logs-tbody');
+  if(!list.length){tb.innerHTML='<tr><td colspan="5" class="empty-row">No logs yet.</td></tr>';return;}
+  tb.innerHTML=list.slice(0,150).map(l=>`<tr>
+    <td style="font-family:var(--mono);font-size:0.68rem;color:var(--muted)">${(l.created_at||'').slice(0,19).replace('T',' ')}</td>
+    <td style="font-size:0.78rem">${x(l.owner_name||'—')}</td>
+    <td class="log-action">${x(l.action)}</td>
+    <td style="font-size:0.75rem;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x(l.detail||'—')}</td>
+    <td style="font-family:var(--mono);font-size:0.68rem;color:var(--muted2)">${x(l.ip_addr||'—')}</td>
+  </tr>`).join('');
+}
+
+let tt=null;
+function toast(msg,isErr=false){
+  const el=document.getElementById('toast');
+  document.getElementById('toast-msg').textContent=msg;
+  el.classList.toggle('err',isErr);el.classList.add('show');
+  clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('show'),3000);
+}
+function x(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+['ov-new','ov-logins'].forEach(id=>{document.getElementById(id).addEventListener('click',e=>{if(e.target===e.currentTarget)document.getElementById(id).classList.remove('open');});});
+</script>
+</body>
+</html>

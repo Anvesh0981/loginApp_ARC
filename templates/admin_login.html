@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Credential Vault</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Outfit:wght@400;500;600&family=Fira+Code:wght@400&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0c0e15;--card:#13161f;--border:#1e2535;--border2:#2a3250;--accent:#c8f04a;--red:#f06060;--muted:#5a6480;--text:#dde3f0;--sans:'Outfit',sans-serif;--serif:'Syne',sans-serif;--mono:'Fira Code',monospace;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;display:flex;align-items:center;justify-content:center;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(200,240,74,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(200,240,74,0.025) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;}
+.card{position:relative;z-index:1;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:44px 40px 40px;width:420px;max-width:95vw;text-align:center;}
+.icon{font-size:2.4rem;margin-bottom:18px;display:block;}
+h1{font-family:var(--serif);font-size:1.6rem;font-weight:800;margin-bottom:5px;}
+.sub{font-size:0.8rem;color:var(--muted);margin-bottom:30px;}
+.admin-tag{display:inline-block;background:rgba(200,240,74,0.1);border:1px solid rgba(200,240,74,0.25);color:var(--accent);font-family:var(--mono);font-size:0.6rem;padding:2px 10px;border-radius:4px;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:20px;}
+.field{text-align:left;margin-bottom:16px;}
+.field label{display:block;font-size:0.68rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;}
+.field input{width:100%;background:#0d1018;border:1px solid var(--border2);border-radius:10px;color:var(--text);font-family:var(--mono);font-size:0.88rem;padding:11px 15px;outline:none;transition:border-color 0.2s;letter-spacing:0.08em;}
+.field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(200,240,74,0.09);}
+.btn{width:100%;padding:12px;border-radius:10px;border:none;background:var(--accent);color:#0c0e15;font-family:var(--serif);font-size:0.95rem;font-weight:700;cursor:pointer;transition:all 0.2s;margin-top:4px;}
+.btn:hover{background:#b8e030;transform:translateY(-1px);}
+.err{background:rgba(240,96,96,0.1);border:1px solid rgba(240,96,96,0.3);color:var(--red);border-radius:8px;padding:9px 13px;font-size:0.8rem;margin-bottom:14px;display:none;}
+.back{margin-top:20px;font-size:0.72rem;color:var(--muted);}
+.back a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--border2);}
+.back a:hover{color:var(--text);}
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="icon">⚙️</span>
+  <div class="admin-tag">Admin Access</div>
+  <h1>Admin Panel</h1>
+  <p class="sub">Enter the admin password to manage access keys</p>
+  <div class="err" id="err"></div>
+  <div class="field"><label>Admin Password</label><input id="pw" type="password" autofocus></div>
+  <button class="btn" onclick="doLogin()">Enter Admin Panel</button>
+  <div class="back"><a href="/login">← Back to user login</a></div>
+</div>
+<script>
+document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+async function doLogin(){
+  const pw=document.getElementById('pw').value;
+  const err=document.getElementById('err');
+  err.style.display='none';
+  const res=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  const d=await res.json();
+  if(d.ok){window.location.href='/admin';}
+  else{err.textContent=d.error||'Wrong password.';err.style.display='block';}
+}
+</script>
+</body>
+</html>

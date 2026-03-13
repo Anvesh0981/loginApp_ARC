@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Logins — Credential Vault</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Outfit:wght@300;400;500;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0e15;--surface:#0f1118;--card:#13161f;--border:#1e2535;--border2:#2a3250;
+  --accent:#c8f04a;--blue:#5b9cf6;--red:#f06060;--green:#3dffa0;--orange:#ff9a3c;--purple:#a78bfa;
+  --muted:#5a6480;--muted2:#3a4060;--text:#dde3f0;
+  --sans:'Outfit',sans-serif;--serif:'Syne',sans-serif;--mono:'Fira Code',monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(200,240,74,0.018) 1px,transparent 1px),linear-gradient(90deg,rgba(200,240,74,0.018) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;z-index:0;}
+
+/* Header */
+header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:0 36px;height:60px;background:rgba(12,14,21,0.9);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);}
+.logo{font-family:var(--serif);font-size:1rem;font-weight:800;color:var(--accent);letter-spacing:0.04em;}
+.user-pill{display:flex;align-items:center;gap:10px;font-size:0.8rem;color:var(--muted);}
+.user-pill span{color:var(--text);font-weight:600;}
+.logout-btn{padding:5px 14px;border-radius:7px;border:1px solid var(--border2);background:none;color:var(--muted);font-family:var(--sans);font-size:0.75rem;cursor:pointer;transition:all 0.2s;text-decoration:none;}
+.logout-btn:hover{color:var(--red);border-color:rgba(240,96,96,0.4);}
+
+/* Layout */
+.page{position:relative;z-index:1;max-width:1320px;margin:0 auto;padding:36px 28px 80px;}
+
+/* Target URL bar */
+.target-bar{background:rgba(91,156,246,0.07);border:1px solid rgba(91,156,246,0.2);border-radius:10px;padding:12px 20px;display:flex;align-items:center;gap:12px;margin-bottom:28px;}
+.target-label{font-family:var(--mono);font-size:0.62rem;color:var(--blue);letter-spacing:0.1em;text-transform:uppercase;flex-shrink:0;}
+.target-url{font-family:var(--mono);font-size:0.82rem;color:var(--text);}
+.target-lock{font-size:0.75rem;margin-left:auto;color:var(--muted);font-size:0.68rem;border:1px solid var(--border2);border-radius:5px;padding:2px 8px;}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:28px;}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 18px;}
+.stat-n{font-family:var(--serif);font-size:1.9rem;font-weight:800;line-height:1;}
+.stat-l{font-size:0.65rem;color:var(--muted);margin-top:4px;font-weight:500;text-transform:uppercase;letter-spacing:0.08em;}
+
+/* Toolbar */
+.toolbar{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;align-items:center;}
+.search-wrap{flex:1;min-width:200px;position:relative;}
+.search-wrap input{width:100%;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 14px 9px 36px;font-family:var(--sans);font-size:0.85rem;color:var(--text);outline:none;transition:border-color 0.2s;}
+.search-wrap input:focus{border-color:var(--accent);}
+.search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:0.85rem;pointer-events:none;}
+.filter-sel{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 14px;color:var(--text);font-family:var(--sans);font-size:0.85rem;outline:none;cursor:pointer;}
+.filter-sel:focus{border-color:var(--accent);}
+.add-btn{padding:9px 20px;border-radius:9px;border:none;background:var(--accent);color:#0c0e15;font-family:var(--serif);font-size:0.9rem;font-weight:700;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+.add-btn:hover{background:#b8e030;transform:translateY(-1px);}
+
+/* Cards grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:all 0.22s cubic-bezier(0.4,0,0.2,1);cursor:pointer;}
+.card:hover{transform:translateY(-3px);box-shadow:0 10px 32px rgba(0,0,0,0.45);border-color:var(--border2);}
+
+/* Status strip */
+.status-strip{height:3px;}
+.ss-pending    {background:linear-gradient(90deg,var(--muted2),var(--muted));}
+.ss-in_progress{background:linear-gradient(90deg,#3b82f6,#60a5fa);}
+.ss-completed  {background:linear-gradient(90deg,#10b981,var(--green));}
+.ss-failed     {background:linear-gradient(90deg,#dc2626,var(--red));}
+
+.card-body{padding:18px 18px 14px;}
+.card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;}
+.card-label{font-family:var(--serif);font-size:1rem;font-weight:700;line-height:1.2;}
+.status-badge{font-family:var(--mono);font-size:0.58rem;font-weight:500;letter-spacing:0.06em;padding:3px 8px;border-radius:99px;text-transform:uppercase;flex-shrink:0;margin-left:6px;}
+.sb-pending    {background:rgba(90,100,128,0.2);color:var(--muted);}
+.sb-in_progress{background:rgba(91,156,246,0.15);color:var(--blue);}
+.sb-completed  {background:rgba(61,255,160,0.12);color:var(--green);}
+.sb-failed     {background:rgba(240,96,96,0.12);color:var(--red);}
+
+.card-user{font-family:var(--mono);font-size:0.72rem;color:var(--blue);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.card-row{display:flex;align-items:center;gap:6px;padding:5px 0;border-top:1px solid rgba(30,37,53,0.5);}
+.cr-icon{width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:0.65rem;flex-shrink:0;}
+.cr-label{font-size:0.65rem;color:var(--muted);min-width:60px;font-weight:500;}
+.cr-val{font-family:var(--mono);font-size:0.72rem;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* Security answers in card */
+.card-sec{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border2);}
+.card-sec-title{font-size:0.6rem;color:var(--muted2);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:5px;}
+.sec-qa{display:flex;gap:4px;font-size:0.68rem;padding:2px 0;}
+.sec-q{color:var(--muted);flex-shrink:0;max-width:58%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sec-a{font-family:var(--mono);color:var(--purple);font-size:0.7rem;}
+
+.card-footer{padding:10px 18px 14px;display:flex;align-items:center;justify-content:space-between;}
+.card-date{font-size:0.65rem;color:var(--muted);}
+.card-btns{display:flex;gap:6px;}
+.c-btn{padding:5px 12px;border-radius:7px;border:1px solid transparent;font-size:0.72rem;font-weight:600;cursor:pointer;font-family:var(--sans);transition:all 0.15s;}
+.c-btn-edit{background:rgba(91,156,246,0.1);border-color:rgba(91,156,246,0.25);color:var(--blue);}
+.c-btn-edit:hover{background:rgba(91,156,246,0.2);}
+.c-btn-del{background:rgba(240,96,96,0.08);border-color:rgba(240,96,96,0.2);color:var(--red);}
+.c-btn-del:hover{background:rgba(240,96,96,0.18);}
+
+/* Empty */
+.empty{text-align:center;padding:70px 20px;color:var(--muted);}
+.empty-icon{font-size:2.8rem;margin-bottom:14px;opacity:0.5;}
+.empty h3{font-family:var(--serif);font-size:1.3rem;color:var(--text);margin-bottom:8px;}
+
+/* Modal */
+.overlay{position:fixed;inset:0;background:rgba(5,6,12,0.82);backdrop-filter:blur(8px);z-index:200;display:none;align-items:center;justify-content:center;padding:20px;}
+.overlay.open{display:flex;}
+.modal{background:var(--card);border:1px solid var(--border2);border-radius:18px;width:660px;max-width:100%;max-height:92vh;overflow-y:auto;animation:mi 0.25s cubic-bezier(0.34,1.56,0.64,1);}
+@keyframes mi{from{transform:scale(0.9) translateY(20px);opacity:0}to{transform:scale(1) translateY(0);opacity:1}}
+.m-top{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--card);z-index:1;}
+.m-title{font-family:var(--serif);font-size:1.1rem;font-weight:800;}
+.m-close{background:var(--border);border:none;color:var(--muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:0.8rem;display:flex;align-items:center;justify-content:center;transition:all 0.2s;}
+.m-close:hover{background:var(--red);color:#fff;}
+.m-body{padding:22px 24px;}
+.m-foot{padding:14px 24px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--card);}
+
+/* Form */
+.f{margin-bottom:14px;}
+.f label{display:block;font-size:0.65rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;}
+.f input,.f select,.f textarea{width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:0.88rem;padding:10px 13px;outline:none;transition:border-color 0.2s;}
+.f input:focus,.f select:focus,.f textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(200,240,74,0.07);}
+.f input[type="password"]{font-family:var(--mono);letter-spacing:0.1em;}
+.f select{cursor:pointer;}
+.f textarea{resize:vertical;}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+.sec-heading{font-size:0.62rem;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:var(--purple);padding:12px 0 8px;border-top:1px solid var(--border);margin-top:4px;display:flex;align-items:center;gap:8px;}
+.sec-heading::after{content:'';flex:1;height:1px;background:var(--border);}
+
+.sq-block{background:rgba(167,139,250,0.06);border:1px solid rgba(167,139,250,0.15);border-radius:10px;padding:13px 15px;margin-bottom:9px;}
+.sq-q{font-size:0.75rem;font-weight:600;color:var(--text);margin-bottom:8px;display:flex;align-items:center;gap:7px;}
+.sq-n{width:20px;height:20px;border-radius:50%;background:var(--purple);color:#0c0e15;font-size:0.6rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.sq-block input{background:var(--surface);border:1px solid var(--border2);border-radius:7px;width:100%;padding:9px 12px;font-family:var(--mono);font-size:0.82rem;color:var(--text);outline:none;transition:border-color 0.2s;}
+.sq-block input:focus{border-color:var(--purple);box-shadow:0 0 0 3px rgba(167,139,250,0.1);}
+
+.target-readonly{background:rgba(91,156,246,0.06);border:1px solid rgba(91,156,246,0.2);border-radius:8px;padding:10px 13px;font-family:var(--mono);font-size:0.82rem;color:var(--blue);display:flex;align-items:center;gap:8px;}
+.lock-icon{font-size:0.75rem;flex-shrink:0;}
+
+.mf-btn{padding:10px 22px;border-radius:9px;border:none;font-family:var(--serif);font-size:0.9rem;font-weight:700;cursor:pointer;transition:all 0.2s;}
+.mf-cancel{background:var(--border);color:var(--muted);}
+.mf-cancel:hover{color:var(--text);}
+.mf-save{background:var(--accent);color:#0c0e15;}
+.mf-save:hover{background:#b8e030;transform:translateY(-1px);}
+
+/* Toast */
+.toast{position:fixed;bottom:26px;right:26px;z-index:999;background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:11px 18px;font-size:0.8rem;display:flex;align-items:center;gap:9px;box-shadow:0 8px 28px rgba(0,0,0,0.5);transform:translateY(80px);opacity:0;transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);pointer-events:none;}
+.toast.show{transform:translateY(0);opacity:1;}
+.td{width:8px;height:8px;border-radius:50%;background:var(--accent);}
+.toast.err .td{background:var(--red);}
+
+@media(max-width:800px){.stats{grid-template-columns:repeat(3,1fr)}.grid{grid-template-columns:1fr}.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🔐 Credential Vault</div>
+  <div class="user-pill">
+    Logged in as <span>{{ owner }}</span>
+    <a href="/logout" class="logout-btn">Log out</a>
+  </div>
+</header>
+
+<div class="page">
+
+  <!-- Target URL (static, locked) -->
+  <div class="target-bar">
+    <span class="target-label">Target URL</span>
+    <span class="target-url">{{ target_url }}</span>
+    <span class="target-lock">🔒 locked</span>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat"><div class="stat-n" id="st-total" style="color:var(--accent)">—</div><div class="stat-l">Total</div></div>
+    <div class="stat"><div class="stat-n" id="st-pending" style="color:var(--muted)">—</div><div class="stat-l">Pending</div></div>
+    <div class="stat"><div class="stat-n" id="st-inprog" style="color:var(--blue)">—</div><div class="stat-l">In Progress</div></div>
+    <div class="stat"><div class="stat-n" id="st-done" style="color:var(--green)">—</div><div class="stat-l">Completed</div></div>
+    <div class="stat"><div class="stat-n" id="st-fail" style="color:var(--red)">—</div><div class="stat-l">Failed</div></div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input id="search" placeholder="Search by label or username…" oninput="filterCards()">
+    </div>
+    <select class="filter-sel" id="status-filter" onchange="filterCards()">
+      <option value="">All statuses</option>
+      <option value="pending">Pending</option>
+      <option value="in_progress">In Progress</option>
+      <option value="completed">Completed</option>
+      <option value="failed">Failed</option>
+    </select>
+    <select class="filter-sel" id="sort-sel" onchange="filterCards()">
+      <option value="newest">Newest first</option>
+      <option value="oldest">Oldest first</option>
+      <option value="alpha">A → Z</option>
+    </select>
+    <button class="add-btn" onclick="openAdd()">＋ Add Login</button>
+  </div>
+
+  <!-- Grid -->
+  <div class="grid" id="grid"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"><div class="td"></div><span id="toast-msg"></span></div>
+
+<!-- ═══ ADD/EDIT MODAL ════════════════════════════════════════════════════ -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="m-top">
+      <div class="m-title" id="m-title">Add Login</div>
+      <button class="m-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="m-body">
+      <input type="hidden" id="edit-id">
+
+      <!-- Target URL (static, readonly) -->
+      <div class="f" style="margin-bottom:18px">
+        <label>Target URL (fixed)</label>
+        <div class="target-readonly"><span class="lock-icon">🔒</span>{{ target_url }}</div>
+      </div>
+
+      <div class="f"><label>Profile Label *</label><input id="f-label" placeholder="e.g. Account 1 · Admin · Staging"></div>
+      <div class="g2">
+        <div class="f"><label>Username *</label><input id="f-user" autocomplete="off" placeholder="user@email.com"></div>
+        <div class="f">
+          <label>Password *</label>
+          <div style="position:relative">
+            <input id="f-pass" type="password" autocomplete="off" placeholder="••••••••">
+            <button onclick="togglePass()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.8rem;">👁</button>
+          </div>
+        </div>
+      </div>
+      <div class="g2">
+        <div class="f">
+          <label>Status</label>
+          <select id="f-status">
+            {% for s in statuses %}
+            <option value="{{ s }}">{{ s.replace('_',' ').title() }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="f"><label>Target Date</label><input id="f-date" type="date"></div>
+      </div>
+
+      <div class="sec-heading">🛡 Security Question Answers</div>
+
+      {% for q in questions %}
+      <div class="sq-block">
+        <div class="sq-q"><span class="sq-n">{{ loop.index }}</span>{{ q }}</div>
+        <input id="f-a{{ loop.index }}" placeholder="Your answer…" autocomplete="off">
+      </div>
+      {% endfor %}
+
+      <div class="f" style="margin-top:14px"><label>Notes</label><textarea id="f-notes" rows="2" placeholder="Optional notes…"></textarea></div>
+    </div>
+    <div class="m-foot">
+      <button class="mf-btn mf-cancel" onclick="closeModal()">Cancel</button>
+      <button class="mf-btn mf-save" onclick="saveLogin()">Save Login</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SQ_SHORT = ['Mother\'s maiden name','First pet\'s name','City of birth','First school name'];
+let all = [];
+
+(async()=>{ await loadAll(); })();
+
+async function loadAll(){
+  const [lr,sr] = await Promise.all([fetch('/api/logins'),fetch('/api/stats')]);
+  all = await lr.json();
+  const s = await sr.json();
+  document.getElementById('st-total').textContent  = s.total;
+  document.getElementById('st-pending').textContent = s.pending;
+  document.getElementById('st-inprog').textContent  = s.in_progress;
+  document.getElementById('st-done').textContent    = s.completed;
+  document.getElementById('st-fail').textContent    = s.failed;
+  filterCards();
+}
+
+function filterCards(){
+  const q  = document.getElementById('search').value.toLowerCase();
+  const sf = document.getElementById('status-filter').value;
+  const so = document.getElementById('sort-sel').value;
+  let list = all.filter(l=>{
+    const match = !q||(l.label||'').toLowerCase().includes(q)||(l.username||'').toLowerCase().includes(q);
+    const sMatch = !sf||l.status===sf;
+    return match&&sMatch;
+  });
+  list = [...list].sort((a,b)=>{
+    if(so==='alpha')  return (a.label||'').localeCompare(b.label||'');
+    if(so==='oldest') return (a.created_at||'').localeCompare(b.created_at||'');
+    return (b.created_at||'').localeCompare(a.created_at||'');
+  });
+  renderGrid(list);
+}
+
+const STATUS_LABELS = {pending:'Pending',in_progress:'In Progress',completed:'Completed',failed:'Failed'};
+
+function renderGrid(list){
+  const g = document.getElementById('grid');
+  if(!list.length){
+    g.innerHTML=`<div class="empty"><div class="empty-icon">🗝️</div><h3>No logins yet</h3><p>Click "+ Add Login" to save your first credential</p></div>`;
+    return;
+  }
+  g.innerHTML = list.map(l=>{
+    const created = (l.created_at||'').slice(0,10);
+    const completed = l.completed_at ? ' · Done: '+(l.completed_at||'').slice(0,10) : '';
+    const ans = [l.ans_q1,l.ans_q2,l.ans_q3,l.ans_q4];
+    const sqHtml = ans.map((a,i)=>a?`<div class="sec-qa"><span class="sec-q">${x(SQ_SHORT[i])}</span><span style="color:var(--muted2);margin:0 3px">→</span><span class="sec-a">${x(a)}</span></div>`:'').filter(Boolean).join('');
+    return `<div class="card" onclick="openEdit(${l.id})">
+      <div class="status-strip ss-${l.status||'pending'}"></div>
+      <div class="card-body">
+        <div class="card-top">
+          <div class="card-label">${x(l.label||'Unnamed')}</div>
+          <span class="status-badge sb-${l.status||'pending'}">${STATUS_LABELS[l.status]||l.status}</span>
+        </div>
+        <div class="card-user">${x(l.username)}</div>
+        <div class="card-row"><div class="cr-icon" style="background:rgba(91,156,246,0.12);color:var(--blue)">🔑</div><span class="cr-label">Password</span><span class="cr-val">••••••••</span></div>
+        ${l.target_date?`<div class="card-row"><div class="cr-icon" style="background:rgba(200,240,74,0.1);color:var(--accent)">📅</div><span class="cr-label">Date</span><span class="cr-val">${x(l.target_date)}</span></div>`:''}
+        ${sqHtml?`<div class="card-sec"><div class="card-sec-title">Security Answers</div>${sqHtml}</div>`:''}
+      </div>
+      <div class="card-footer">
+        <div class="card-date">${created}${completed}</div>
+        <div class="card-btns">
+          <button class="c-btn c-btn-edit" onclick="event.stopPropagation();openEdit(${l.id})">Edit</button>
+          <button class="c-btn c-btn-del"  onclick="event.stopPropagation();deleteLogin(${l.id})">Del</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openAdd(){
+  document.getElementById('m-title').textContent='Add Login';
+  document.getElementById('edit-id').value='';
+  clearForm();
+  document.getElementById('overlay').classList.add('open');
+}
+function openEdit(id){
+  const l=all.find(z=>z.id===id); if(!l)return;
+  document.getElementById('m-title').textContent='Edit Login';
+  document.getElementById('edit-id').value=id;
+  document.getElementById('f-label').value=l.label||'';
+  document.getElementById('f-user').value=l.username||'';
+  document.getElementById('f-pass').value=l.password||'';
+  document.getElementById('f-status').value=l.status||'pending';
+  document.getElementById('f-a1').value=l.ans_q1||'';
+  document.getElementById('f-a2').value=l.ans_q2||'';
+  document.getElementById('f-a3').value=l.ans_q3||'';
+  document.getElementById('f-a4').value=l.ans_q4||'';
+  document.getElementById('f-date').value=l.target_date||'';
+  document.getElementById('f-notes').value=l.notes||'';
+  document.getElementById('overlay').classList.add('open');
+}
+function closeModal(){document.getElementById('overlay').classList.remove('open');}
+function clearForm(){['f-label','f-user','f-pass','f-a1','f-a2','f-a3','f-a4','f-date','f-notes'].forEach(id=>document.getElementById(id).value='');document.getElementById('f-status').value='pending';}
+function togglePass(){const i=document.getElementById('f-pass');i.type=i.type==='password'?'text':'password';}
+
+async function saveLogin(){
+  const id=document.getElementById('edit-id').value;
+  const data={
+    label:document.getElementById('f-label').value.trim(),
+    username:document.getElementById('f-user').value.trim(),
+    password:document.getElementById('f-pass').value,
+    status:document.getElementById('f-status').value,
+    ans_q1:document.getElementById('f-a1').value.trim(),
+    ans_q2:document.getElementById('f-a2').value.trim(),
+    ans_q3:document.getElementById('f-a3').value.trim(),
+    ans_q4:document.getElementById('f-a4').value.trim(),
+    target_date:document.getElementById('f-date').value,
+    notes:document.getElementById('f-notes').value.trim(),
+  };
+  if(!data.label){toast('Profile label required',true);return;}
+  if(!data.username){toast('Username required',true);return;}
+  if(!data.password){toast('Password required',true);return;}
+  const url=id?`/api/logins/${id}`:'/api/logins';
+  const method=id?'PUT':'POST';
+  const res=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  const d=await res.json();
+  if(!d.ok){toast('Save failed',true);return;}
+  closeModal();toast(id?'✓ Login updated':'✓ Login saved');
+  await loadAll();
+}
+
+async function deleteLogin(id){
+  const l=all.find(z=>z.id===id);
+  if(!confirm(`Delete "${l?.label||'this login'}"?`))return;
+  await fetch(`/api/logins/${id}`,{method:'DELETE'});
+  toast('Deleted');await loadAll();
+}
+
+let tt=null;
+function toast(msg,isErr=false){
+  const el=document.getElementById('toast');
+  document.getElementById('toast-msg').textContent=msg;
+  el.classList.toggle('err',isErr);
+  el.classList.add('show');clearTimeout(tt);
+  tt=setTimeout(()=>el.classList.remove('show'),3000);
+}
+function x(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+document.getElementById('overlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal();});
+</script>
+</body>
+</html>
