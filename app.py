@@ -15,9 +15,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
 # ── Config ────────────────────────────────────────────────────────────────────
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://localhost/credential_vault")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin1234")   # change in production
-TARGET_URL = os.environ.get("TARGET_URL", "https://abc-app.example.com/login")  # static for all
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin1234")
+TARGET_URL     = os.environ.get("TARGET_URL", "https://abc-app.example.com/login")
 
 STATIC_QUESTIONS = [
     "What is your mother's maiden name?",
@@ -30,13 +29,18 @@ LOGIN_STATUSES = ["pending", "in_progress", "completed", "failed"]
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    url = os.environ.get("DATABASE_URL", "")
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set in environment variables.")
+    # Railway gives postgres:// but psycopg2 needs postgresql://
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    conn = psycopg2.connect(url, cursor_factory=RealDictCursor)
     return conn
 
 def init_db():
     conn = get_db()
     c = conn.cursor()
-
     c.execute("""
         CREATE TABLE IF NOT EXISTS access_keys (
             id          SERIAL PRIMARY KEY,
@@ -51,9 +55,7 @@ def init_db():
             notes       TEXT DEFAULT ''
         )
     """)
-    # For existing deployments: add column if missing
     c.execute("ALTER TABLE access_keys ADD COLUMN IF NOT EXISTS custom_key TEXT UNIQUE")
-
     c.execute("""
         CREATE TABLE IF NOT EXISTS logins (
             id           SERIAL PRIMARY KEY,
@@ -73,7 +75,6 @@ def init_db():
             completed_at TIMESTAMPTZ
         )
     """)
-
     c.execute("""
         CREATE TABLE IF NOT EXISTS audit_log (
             id         SERIAL PRIMARY KEY,
@@ -84,7 +85,6 @@ def init_db():
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
-
     conn.commit()
     conn.close()
 
@@ -103,6 +103,19 @@ def log_action(key_id, action, detail=""):
 
 def hash_key(raw_key):
     return hashlib.sha256(raw_key.encode()).hexdigest()
+
+# ── Ensure tables exist on first request (works under gunicorn, no shell needed)
+_db_initialized = False
+
+@app.before_request
+def ensure_tables():
+    global _db_initialized
+    if not _db_initialized:
+        try:
+            init_db()
+            _db_initialized = True
+        except Exception as e:
+            print(f"DB init warning: {e}")
 
 # ── Auth decorators ───────────────────────────────────────────────────────────
 def require_user(f):
@@ -130,16 +143,15 @@ def healthz():
 
 @app.route("/setup-db")
 def setup_db():
-    """One-time manual trigger to create tables. Protected by SETUP_SECRET env var."""
     secret = request.args.get("key", "")
     setup_secret = os.environ.get("SETUP_SECRET", "")
     if not setup_secret or secret != setup_secret:
         return "forbidden", 403
     try:
         init_db()
-        return "✅ Tables created successfully! You can remove SETUP_SECRET now.", 200
+        return "Tables created successfully!", 200
     except Exception as e:
-        return f"❌ Error: {e}", 500
+        return f"Error: {e}", 500
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  PUBLIC — Access key login
@@ -243,19 +255,16 @@ def api_update(lid):
     d = request.json
     conn = get_db()
     c = conn.cursor()
-    # verify ownership
     c.execute("SELECT id FROM logins WHERE id=%s AND key_id=%s", (lid, session["key_id"]))
     if not c.fetchone():
         conn.close()
         return jsonify({"ok": False, "error": "Not found"}), 404
 
-    completed_at_clause = ""
     params = [d.get("label",""), d.get("username",""), d.get("password",""),
               d.get("ans_q1",""), d.get("ans_q2",""), d.get("ans_q3",""), d.get("ans_q4",""),
               d.get("target_date",""), d.get("status","pending"), d.get("notes",""),
               lid, session["key_id"]]
 
-    # auto-set completed_at when status becomes 'completed'
     if d.get("status") == "completed":
         c.execute(
             """UPDATE logins SET label=%s,username=%s,password=%s,
@@ -354,7 +363,6 @@ def admin_create_key():
     d = request.json
     custom = (d.get("custom_key") or "").strip()
     if custom:
-        # Validate: no spaces, min 3 chars
         if len(custom) < 3 or " " in custom:
             return jsonify({"ok": False, "error": "Key must be at least 3 characters with no spaces"})
         raw_key = custom
@@ -363,7 +371,6 @@ def admin_create_key():
 
     conn = get_db()
     c = conn.cursor()
-    # Check uniqueness of custom key
     c.execute("SELECT id FROM access_keys WHERE custom_key=%s", (raw_key,))
     if c.fetchone():
         conn.close()
@@ -397,15 +404,13 @@ def admin_update_key(kid):
         if len(new_key) < 3 or " " in new_key:
             conn.close()
             return jsonify({"ok": False, "error": "Key must be at least 3 characters with no spaces"})
-        # Check uniqueness (excluding this record)
         c.execute("SELECT id FROM access_keys WHERE custom_key=%s AND id!=%s", (new_key, kid))
         if c.fetchone():
             conn.close()
             return jsonify({"ok": False, "error": f"Key \"{new_key}\" is already in use."})
         c.execute(
             """UPDATE access_keys SET owner_name=%s,owner_email=%s,is_active=%s,
-               expires_at=%s,notes=%s,
-               key_hash=%s,key_preview=%s,custom_key=%s
+               expires_at=%s,notes=%s,key_hash=%s,key_preview=%s,custom_key=%s
                WHERE id=%s""",
             (d.get("owner_name",""), d.get("owner_email",""),
              d.get("is_active", True), d.get("expires_at") or None, d.get("notes",""),
