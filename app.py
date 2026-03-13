@@ -18,11 +18,23 @@ app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin1234")
 TARGET_URL     = os.environ.get("TARGET_URL", "https://abc-app.example.com/login")
 
-STATIC_QUESTIONS = [
+# Full list of selectable security questions (matches the target app dropdowns)
+SECURITY_QUESTION_OPTIONS = [
     "What is your mother's maiden name?",
-    "What was the name of your first pet?",
-    "What city were you born in?",
-    "What was the name of your first school?",
+    "What was the name of your first/current/favorite pet?",
+    "What was your first car?",
+    "What elementary school did you attend?",
+    "What is the name of the town/city where you were born?",
+    "What is the name of the road/street you grew up on?",
+    "What is your least favorite food?",
+    "What was the first company that you worked for?",
+    "What is your favorite food?",
+    "What high school did you attend?",
+    "Where did you meet your spouse?",
+    "What is your sibling's middle name?",
+    "Who was your childhood hero?",
+    "In what city or town was your first job?",
+    "What is the name of a college you applied to but didn't attend?",
 ]
 
 LOGIN_STATUSES = ["pending", "in_progress", "completed", "failed"]
@@ -63,10 +75,12 @@ def init_db():
             label        TEXT NOT NULL,
             username     TEXT NOT NULL,
             password     TEXT NOT NULL,
+            sel_q1       TEXT DEFAULT '',
             ans_q1       TEXT DEFAULT '',
+            sel_q2       TEXT DEFAULT '',
             ans_q2       TEXT DEFAULT '',
+            sel_q3       TEXT DEFAULT '',
             ans_q3       TEXT DEFAULT '',
-            ans_q4       TEXT DEFAULT '',
             target_date  TEXT DEFAULT '',
             status       TEXT DEFAULT 'pending',
             notes        TEXT DEFAULT '',
@@ -75,6 +89,9 @@ def init_db():
             completed_at TIMESTAMPTZ
         )
     """)
+    # For existing deployments: add columns if missing
+    for col in ["sel_q1","sel_q2","sel_q3"]:
+        c.execute(f"ALTER TABLE logins ADD COLUMN IF NOT EXISTS {col} TEXT DEFAULT ''")
     c.execute("""
         CREATE TABLE IF NOT EXISTS audit_log (
             id         SERIAL PRIMARY KEY,
@@ -209,7 +226,7 @@ def logout():
 def user_dashboard():
     return render_template("dashboard.html",
                            owner=session["key_owner"],
-                           questions=STATIC_QUESTIONS,
+                           question_options=SECURITY_QUESTION_OPTIONS,
                            target_url=TARGET_URL,
                            statuses=LOGIN_STATUSES)
 
@@ -235,13 +252,16 @@ def api_create():
     c = conn.cursor()
     c.execute(
         """INSERT INTO logins
-           (key_id,label,username,password,ans_q1,ans_q2,ans_q3,ans_q4,
+           (key_id,label,username,password,
+            sel_q1,ans_q1,sel_q2,ans_q2,sel_q3,ans_q3,
             target_date,status,notes)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (session["key_id"], d.get("label",""), d.get("username",""),
-         d.get("password",""), d.get("ans_q1",""), d.get("ans_q2",""),
-         d.get("ans_q3",""), d.get("ans_q4",""), d.get("target_date",""),
-         d.get("status","pending"), d.get("notes",""))
+         d.get("password",""),
+         d.get("sel_q1",""), d.get("ans_q1",""),
+         d.get("sel_q2",""), d.get("ans_q2",""),
+         d.get("sel_q3",""), d.get("ans_q3",""),
+         d.get("target_date",""), d.get("status","pending"), d.get("notes",""))
     )
     new_id = c.fetchone()["id"]
     conn.commit()
@@ -261,14 +281,16 @@ def api_update(lid):
         return jsonify({"ok": False, "error": "Not found"}), 404
 
     params = [d.get("label",""), d.get("username",""), d.get("password",""),
-              d.get("ans_q1",""), d.get("ans_q2",""), d.get("ans_q3",""), d.get("ans_q4",""),
+              d.get("sel_q1",""), d.get("ans_q1",""),
+              d.get("sel_q2",""), d.get("ans_q2",""),
+              d.get("sel_q3",""), d.get("ans_q3",""),
               d.get("target_date",""), d.get("status","pending"), d.get("notes",""),
               lid, session["key_id"]]
 
     if d.get("status") == "completed":
         c.execute(
             """UPDATE logins SET label=%s,username=%s,password=%s,
-               ans_q1=%s,ans_q2=%s,ans_q3=%s,ans_q4=%s,
+               sel_q1=%s,ans_q1=%s,sel_q2=%s,ans_q2=%s,sel_q3=%s,ans_q3=%s,
                target_date=%s,status=%s,notes=%s,
                updated_at=NOW(),completed_at=NOW()
                WHERE id=%s AND key_id=%s""", params
@@ -276,7 +298,7 @@ def api_update(lid):
     else:
         c.execute(
             """UPDATE logins SET label=%s,username=%s,password=%s,
-               ans_q1=%s,ans_q2=%s,ans_q3=%s,ans_q4=%s,
+               sel_q1=%s,ans_q1=%s,sel_q2=%s,ans_q2=%s,sel_q3=%s,ans_q3=%s,
                target_date=%s,status=%s,notes=%s,
                updated_at=NOW(),completed_at=NULL
                WHERE id=%s AND key_id=%s""", params

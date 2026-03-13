@@ -130,6 +130,9 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
 .sq-n{width:20px;height:20px;border-radius:50%;background:var(--purple);color:#0c0e15;font-size:0.6rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .sq-block input{background:var(--surface);border:1px solid var(--border2);border-radius:7px;width:100%;padding:9px 12px;font-family:var(--mono);font-size:0.82rem;color:var(--text);outline:none;transition:border-color 0.2s;}
 .sq-block input:focus{border-color:var(--purple);box-shadow:0 0 0 3px rgba(167,139,250,0.1);}
+.sq-select{background:var(--surface);border:1px solid var(--border2);border-radius:7px;width:100%;padding:9px 12px;font-family:var(--sans);font-size:0.85rem;color:var(--text);outline:none;cursor:pointer;transition:border-color 0.2s;}
+.sq-select:focus{border-color:var(--purple);box-shadow:0 0 0 3px rgba(167,139,250,0.1);}
+.sq-block .f{margin-bottom:0;}
 
 .target-readonly{background:rgba(91,156,246,0.06);border:1px solid rgba(91,156,246,0.2);border-radius:8px;padding:10px 13px;font-family:var(--mono);font-size:0.82rem;color:var(--blue);display:flex;align-items:center;gap:8px;}
 .lock-icon{font-size:0.75rem;flex-shrink:0;}
@@ -243,12 +246,23 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
         <div class="f"><label>Target Date</label><input id="f-date" type="date"></div>
       </div>
 
-      <div class="sec-heading">🛡 Security Question Answers</div>
+      <div class="sec-heading">🛡 Security Questions</div>
 
-      {% for q in questions %}
+      {% for n in [1,2,3] %}
       <div class="sq-block">
-        <div class="sq-q"><span class="sq-n">{{ loop.index }}</span>{{ q }}</div>
-        <input id="f-a{{ loop.index }}" placeholder="Your answer…" autocomplete="off">
+        <div class="f" style="margin-bottom:10px">
+          <label style="font-size:0.72rem;color:var(--text);text-transform:none;letter-spacing:0;font-weight:600">Select Security Question {{ n }}*</label>
+          <select id="f-sq{{ n }}" class="sq-select">
+            <option value="">Select Security Question {{ n }}</option>
+            {% for q in question_options %}
+            <option value="{{ q }}">{{ q }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="f">
+          <label style="font-size:0.72rem;color:var(--text);text-transform:none;letter-spacing:0;font-weight:600">Answer to Security Question {{ n }}*</label>
+          <input id="f-a{{ n }}" placeholder="" autocomplete="off">
+        </div>
       </div>
       {% endfor %}
 
@@ -262,7 +276,7 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
 </div>
 
 <script>
-const SQ_SHORT = ['Mother\'s maiden name','First pet\'s name','City of birth','First school name'];
+// SQ_SHORT replaced by dynamic question text from sel_q1/sel_q2/sel_q3
 let all = [];
 
 (async()=>{ await loadAll(); })();
@@ -307,8 +321,8 @@ function renderGrid(list){
   g.innerHTML = list.map(l=>{
     const created = (l.created_at||'').slice(0,10);
     const completed = l.completed_at ? ' · Done: '+(l.completed_at||'').slice(0,10) : '';
-    const ans = [l.ans_q1,l.ans_q2,l.ans_q3,l.ans_q4];
-    const sqHtml = ans.map((a,i)=>a?`<div class="sec-qa"><span class="sec-q">${x(SQ_SHORT[i])}</span><span style="color:var(--muted2);margin:0 3px">→</span><span class="sec-a">${x(a)}</span></div>`:'').filter(Boolean).join('');
+    const sqPairs = [[l.sel_q1,l.ans_q1],[l.sel_q2,l.ans_q2],[l.sel_q3,l.ans_q3]];
+    const sqHtml = sqPairs.map(([q,a])=>q&&a?`<div class="sec-qa"><span class="sec-q">${x(q)}</span><span style="color:var(--muted2);margin:0 3px">→</span><span class="sec-a">${x(a)}</span></div>`:'').filter(Boolean).join('');
     return `<div class="card" onclick="openEdit(${l.id})">
       <div class="status-strip ss-${l.status||'pending'}"></div>
       <div class="card-body">
@@ -346,16 +360,18 @@ function openEdit(id){
   document.getElementById('f-user').value=l.username||'';
   document.getElementById('f-pass').value=l.password||'';
   document.getElementById('f-status').value=l.status||'pending';
+  document.getElementById('f-sq1').value=l.sel_q1||'';
   document.getElementById('f-a1').value=l.ans_q1||'';
+  document.getElementById('f-sq2').value=l.sel_q2||'';
   document.getElementById('f-a2').value=l.ans_q2||'';
+  document.getElementById('f-sq3').value=l.sel_q3||'';
   document.getElementById('f-a3').value=l.ans_q3||'';
-  document.getElementById('f-a4').value=l.ans_q4||'';
   document.getElementById('f-date').value=l.target_date||'';
   document.getElementById('f-notes').value=l.notes||'';
   document.getElementById('overlay').classList.add('open');
 }
 function closeModal(){document.getElementById('overlay').classList.remove('open');}
-function clearForm(){['f-label','f-user','f-pass','f-a1','f-a2','f-a3','f-a4','f-date','f-notes'].forEach(id=>document.getElementById(id).value='');document.getElementById('f-status').value='pending';}
+function clearForm(){['f-label','f-user','f-pass','f-sq1','f-a1','f-sq2','f-a2','f-sq3','f-a3','f-date','f-notes'].forEach(id=>document.getElementById(id).value='');document.getElementById('f-status').value='pending';}
 function togglePass(){const i=document.getElementById('f-pass');i.type=i.type==='password'?'text':'password';}
 
 async function saveLogin(){
@@ -365,10 +381,12 @@ async function saveLogin(){
     username:document.getElementById('f-user').value.trim(),
     password:document.getElementById('f-pass').value,
     status:document.getElementById('f-status').value,
+    sel_q1:document.getElementById('f-sq1').value,
     ans_q1:document.getElementById('f-a1').value.trim(),
+    sel_q2:document.getElementById('f-sq2').value,
     ans_q2:document.getElementById('f-a2').value.trim(),
+    sel_q3:document.getElementById('f-sq3').value,
     ans_q3:document.getElementById('f-a3').value.trim(),
-    ans_q4:document.getElementById('f-a4').value.trim(),
     target_date:document.getElementById('f-date').value,
     notes:document.getElementById('f-notes').value.trim(),
   };
