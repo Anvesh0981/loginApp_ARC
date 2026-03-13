@@ -41,7 +41,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS access_keys (
             id          SERIAL PRIMARY KEY,
             key_hash    TEXT UNIQUE NOT NULL,
-            key_preview TEXT NOT NULL,           -- first 8 chars shown in admin
+            key_preview TEXT NOT NULL,
             owner_name  TEXT NOT NULL,
             owner_email TEXT NOT NULL DEFAULT '',
             is_active   BOOLEAN DEFAULT TRUE,
@@ -53,20 +53,20 @@ def init_db():
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS logins (
-            id          SERIAL PRIMARY KEY,
-            key_id      INTEGER NOT NULL REFERENCES access_keys(id) ON DELETE CASCADE,
-            label       TEXT NOT NULL,
-            username    TEXT NOT NULL,
-            password    TEXT NOT NULL,
-            ans_q1      TEXT DEFAULT '',
-            ans_q2      TEXT DEFAULT '',
-            ans_q3      TEXT DEFAULT '',
-            ans_q4      TEXT DEFAULT '',
-            target_date TEXT DEFAULT '',
-            status      TEXT DEFAULT 'pending',
-            notes       TEXT DEFAULT '',
-            created_at  TIMESTAMPTZ DEFAULT NOW(),
-            updated_at  TIMESTAMPTZ DEFAULT NOW(),
+            id           SERIAL PRIMARY KEY,
+            key_id       INTEGER NOT NULL REFERENCES access_keys(id) ON DELETE CASCADE,
+            label        TEXT NOT NULL,
+            username     TEXT NOT NULL,
+            password     TEXT NOT NULL,
+            ans_q1       TEXT DEFAULT '',
+            ans_q2       TEXT DEFAULT '',
+            ans_q3       TEXT DEFAULT '',
+            ans_q4       TEXT DEFAULT '',
+            target_date  TEXT DEFAULT '',
+            status       TEXT DEFAULT 'pending',
+            notes        TEXT DEFAULT '',
+            created_at   TIMESTAMPTZ DEFAULT NOW(),
+            updated_at   TIMESTAMPTZ DEFAULT NOW(),
             completed_at TIMESTAMPTZ
         )
     """)
@@ -117,6 +117,26 @@ def require_admin(f):
             return redirect(url_for("admin_login_page"))
         return f(*args, **kwargs)
     return decorated
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  HEALTH + SETUP
+# ══════════════════════════════════════════════════════════════════════════════
+@app.route("/healthz")
+def healthz():
+    return "ok", 200
+
+@app.route("/setup-db")
+def setup_db():
+    """One-time manual trigger to create tables. Protected by SETUP_SECRET env var."""
+    secret = request.args.get("key", "")
+    setup_secret = os.environ.get("SETUP_SECRET", "")
+    if not setup_secret or secret != setup_secret:
+        return "forbidden", 403
+    try:
+        init_db()
+        return "✅ Tables created successfully! You can remove SETUP_SECRET now.", 200
+    except Exception as e:
+        return f"❌ Error: {e}", 500
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  PUBLIC — Access key login
@@ -328,7 +348,7 @@ def admin_list_keys():
 @require_admin
 def admin_create_key():
     d = request.json
-    raw_key = "VLT-" + secrets.token_urlsafe(20)   # e.g. VLT-abc123...
+    raw_key = "VLT-" + secrets.token_urlsafe(20)
     conn = get_db()
     c = conn.cursor()
     expires = d.get("expires_at") or None
