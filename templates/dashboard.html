@@ -320,19 +320,31 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
     </div>
     <div class="run-body">
 
-      <!-- Step guide -->
-      <div class="run-section">
-        <div class="run-section-title">Steps</div>
-        <div class="run-step run-step-active"><div class="run-step-n">1</div><div class="run-step-text">Click <b>Open Login Page</b> below — the target site opens in a new tab</div></div>
-        <div class="run-step"><div class="run-step-n">2</div><div class="run-step-text">Copy your <b>Username</b> and <b>Password</b> below and paste them into the site</div></div>
-        <div class="run-step"><div class="run-step-n">3</div><div class="run-step-text">Solve the <b>captcha</b> and click Sign In</div></div>
-        <div class="run-step"><div class="run-step-n">4</div><div class="run-step-text">When the site asks a <b>security question</b>, find it below and copy the answer</div></div>
-        <div class="run-step"><div class="run-step-n">5</div><div class="run-step-text">You're in — close this panel and update the status to <b>Completed</b></div></div>
+      <!-- Extension ID box — always visible -->
+      <div id="ext-id-box" style="margin-bottom:16px;padding:12px 14px;border-radius:10px;border:1px solid var(--border2);background:var(--surface)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">⚡ Chrome Extension ID</span>
+          <span id="ext-status-pill" style="font-size:0.65rem;padding:2px 8px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)">Not connected</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="ext-id-input" placeholder="Paste your Extension ID here…"
+            style="flex:1;background:var(--card);border:1px solid var(--border2);border-radius:7px;
+                   padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:0.78rem;outline:none">
+          <button onclick="saveExtId()"
+            style="padding:8px 14px;border-radius:7px;border:1px solid rgba(200,240,74,0.3);
+                   background:rgba(200,240,74,0.1);color:var(--accent);cursor:pointer;
+                   font-size:0.75rem;font-weight:700;white-space:nowrap">
+            Save
+          </button>
+        </div>
+        <div style="font-size:0.65rem;color:var(--muted2);margin-top:6px;line-height:1.5">
+          Chrome → <code style="color:var(--muted)">chrome://extensions</code> → Developer Mode ON → copy the ID
+        </div>
       </div>
 
       <!-- Open URL button -->
       <button class="run-url-btn" id="run-url-btn" onclick="openTargetUrl()">
-        <span>🌐</span> <span>Open Login Page</span>
+        <span>🌐</span> <span>Open &amp; Auto-Fill Login Page</span>
       </button>
 
       <!-- Credentials -->
@@ -521,6 +533,21 @@ function openRun(id){
   _runUsername = l.username || '';
   _runData = l;
   document.getElementById('run-label').textContent = l.label || 'Login';
+
+  // Load saved extension ID and show status
+  const savedId = localStorage.getItem('vault_ext_id') || '';
+  const inp = document.getElementById('ext-id-input');
+  const pill = document.getElementById('ext-status-pill');
+  inp.value = savedId;
+  if (savedId) {
+    pill.textContent = '✓ Connected';
+    pill.style.cssText = 'font-size:0.65rem;padding:2px 8px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';
+  } else {
+    pill.textContent = 'Not connected';
+    pill.style.cssText = 'font-size:0.65rem;padding:2px 8px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';
+    // Highlight the input to draw attention
+    setTimeout(() => inp.focus(), 300);
+  }
   document.getElementById('run-username').textContent = l.username || '';
   document.getElementById('run-password-disp').textContent = '••••••••';
   document.getElementById('run-password-disp').classList.add('masked');
@@ -613,48 +640,22 @@ async function sendToExtension() {
 
   // Try broadcasting to any installed Vault extension
   // User needs to pair once via the extension popup
-  showExtensionPrompt();
   return false;
 }
 
-function showExtensionPrompt() {
-  const existing = document.getElementById('ext-prompt');
-  if (existing) { existing.style.display = ''; return; }
-
-  const el = document.createElement('div');
-  el.id = 'ext-prompt';
-  el.style.cssText = `
-    margin-top:12px;background:rgba(200,240,74,0.06);
-    border:1px solid rgba(200,240,74,0.2);border-radius:10px;
-    padding:14px 16px;font-size:0.78rem;color:var(--muted);line-height:1.6
-  `;
-  el.innerHTML = `
-    <div style="color:var(--accent);font-weight:700;margin-bottom:6px">⚡ Enable Auto-Fill</div>
-    Install the <b>Credential Vault</b> Chrome Extension to auto-fill username, password and security answers automatically.
-    <br><br>
-    <input id="ext-id-input" placeholder="Paste Extension ID here after installing"
-      style="width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:7px;
-             padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:0.78rem;
-             outline:none;margin-bottom:8px">
-    <button onclick="saveExtId()" style="padding:6px 16px;border-radius:7px;border:1px solid rgba(200,240,74,0.3);
-      background:rgba(200,240,74,0.1);color:var(--accent);cursor:pointer;font-size:0.78rem;font-weight:600">
-      Save Extension ID
-    </button>
-    <div style="font-size:0.68rem;color:var(--muted2);margin-top:6px">
-      Find Extension ID: Chrome → chrome://extensions → turn on Developer Mode → copy the ID
-    </div>
-  `;
-  document.getElementById('run-body-extra')?.appendChild(el) ||
-    document.querySelector('.run-body').appendChild(el);
-}
+// showExtensionPrompt removed — Extension ID box is now always visible in the Run modal
 
 function saveExtId() {
-  const id = document.getElementById('ext-id-input')?.value.trim();
+  const id = (document.getElementById('ext-id-input')?.value || '').trim();
+  const pill = document.getElementById('ext-status-pill');
   if (id) {
     localStorage.setItem('vault_ext_id', id);
-    document.getElementById('ext-prompt').innerHTML =
-      '<span style="color:var(--green)">✓ Extension ID saved! Click Run Again to auto-fill.</span>';
-    setTimeout(() => document.getElementById('ext-prompt')?.remove(), 3000);
+    pill.textContent = '✓ Connected';
+    pill.style.cssText = 'font-size:0.65rem;padding:2px 8px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';
+  } else {
+    localStorage.removeItem('vault_ext_id');
+    pill.textContent = 'Not connected';
+    pill.style.cssText = 'font-size:0.65rem;padding:2px 8px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';
   }
 }
 
