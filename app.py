@@ -42,6 +42,7 @@ def init_db():
             id          SERIAL PRIMARY KEY,
             key_hash    TEXT UNIQUE NOT NULL,
             key_preview TEXT NOT NULL,
+            custom_key  TEXT UNIQUE,
             owner_name  TEXT NOT NULL,
             owner_email TEXT NOT NULL DEFAULT '',
             is_active   BOOLEAN DEFAULT TRUE,
@@ -50,6 +51,8 @@ def init_db():
             notes       TEXT DEFAULT ''
         )
     """)
+    # For existing deployments: add column if missing
+    c.execute("ALTER TABLE access_keys ADD COLUMN IF NOT EXISTS custom_key TEXT UNIQUE")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS logins (
@@ -243,7 +246,8 @@ def api_update(lid):
     # verify ownership
     c.execute("SELECT id FROM logins WHERE id=%s AND key_id=%s", (lid, session["key_id"]))
     if not c.fetchone():
-        conn.close(); return jsonify({"ok": False, "error": "Not found"}), 404
+        conn.close()
+        return jsonify({"ok": False, "error": "Not found"}), 404
 
     completed_at_clause = ""
     params = [d.get("label",""), d.get("username",""), d.get("password",""),
@@ -348,36 +352,76 @@ def admin_list_keys():
 @require_admin
 def admin_create_key():
     d = request.json
-    raw_key = "VLT-" + secrets.token_urlsafe(20)
+    custom = (d.get("custom_key") or "").strip()
+    if custom:
+        # Validate: no spaces, min 3 chars
+        if len(custom) < 3 or " " in custom:
+            return jsonify({"ok": False, "error": "Key must be at least 3 characters with no spaces"})
+        raw_key = custom
+    else:
+        raw_key = "VLT-" + secrets.token_urlsafe(20)
+
     conn = get_db()
     c = conn.cursor()
+    # Check uniqueness of custom key
+    c.execute("SELECT id FROM access_keys WHERE custom_key=%s", (raw_key,))
+    if c.fetchone():
+        conn.close()
+        return jsonify({"ok": False, "error": f"Key \"{raw_key}\" is already in use. Choose a different one."})
+
     expires = d.get("expires_at") or None
     c.execute(
         """INSERT INTO access_keys
-           (key_hash,key_preview,owner_name,owner_email,expires_at,notes)
-           VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
-        (hash_key(raw_key), raw_key[:12]+"...",
+           (key_hash,key_preview,custom_key,owner_name,owner_email,expires_at,notes)
+           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (hash_key(raw_key), raw_key if len(raw_key) <= 14 else raw_key[:12]+"...",
+         raw_key if custom else None,
          d.get("owner_name",""), d.get("owner_email",""),
          expires, d.get("notes",""))
     )
     new_id = c.fetchone()["id"]
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "id": new_id, "raw_key": raw_key})
+    return jsonify({"ok": True, "id": new_id, "raw_key": raw_key, "is_custom": bool(custom)})
 
 @app.route("/api/admin/keys/<int:kid>", methods=["PUT"])
 @require_admin
 def admin_update_key(kid):
     d = request.json
+    new_key = (d.get("custom_key") or "").strip()
+
     conn = get_db()
     c = conn.cursor()
-    c.execute(
-        """UPDATE access_keys SET owner_name=%s,owner_email=%s,
-           is_active=%s,expires_at=%s,notes=%s WHERE id=%s""",
-        (d.get("owner_name",""), d.get("owner_email",""),
-         d.get("is_active", True), d.get("expires_at") or None,
-         d.get("notes",""), kid)
-    )
+
+    if new_key:
+        if len(new_key) < 3 or " " in new_key:
+            conn.close()
+            return jsonify({"ok": False, "error": "Key must be at least 3 characters with no spaces"})
+        # Check uniqueness (excluding this record)
+        c.execute("SELECT id FROM access_keys WHERE custom_key=%s AND id!=%s", (new_key, kid))
+        if c.fetchone():
+            conn.close()
+            return jsonify({"ok": False, "error": f"Key \"{new_key}\" is already in use."})
+        c.execute(
+            """UPDATE access_keys SET owner_name=%s,owner_email=%s,is_active=%s,
+               expires_at=%s,notes=%s,
+               key_hash=%s,key_preview=%s,custom_key=%s
+               WHERE id=%s""",
+            (d.get("owner_name",""), d.get("owner_email",""),
+             d.get("is_active", True), d.get("expires_at") or None, d.get("notes",""),
+             hash_key(new_key),
+             new_key if len(new_key) <= 14 else new_key[:12]+"...",
+             new_key, kid)
+        )
+    else:
+        c.execute(
+            """UPDATE access_keys SET owner_name=%s,owner_email=%s,
+               is_active=%s,expires_at=%s,notes=%s WHERE id=%s""",
+            (d.get("owner_name",""), d.get("owner_email",""),
+             d.get("is_active", True), d.get("expires_at") or None,
+             d.get("notes",""), kid)
+        )
+
     conn.commit()
     conn.close()
     return jsonify({"ok": True})

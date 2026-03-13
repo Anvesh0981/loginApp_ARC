@@ -189,9 +189,9 @@ tr:hover td{background:rgba(200,240,74,0.012);}
     <div class="m-body">
       <div id="key-reveal-area" style="display:none">
         <div class="key-reveal">
-          <div class="key-reveal-label">🔑 New Access Key — copy now!</div>
+          <div class="key-reveal-label" id="key-reveal-label">🔑 New Access Key — copy now!</div>
           <div class="key-reveal-val" id="new-key-val">—</div>
-          <div class="key-reveal-warn">This key is shown only once. Share it with the user immediately.</div>
+          <div class="key-reveal-warn" id="key-reveal-warn">This key is shown only once. Share it with the user immediately.</div>
           <button class="copy-btn" onclick="copyKey()">📋 Copy to clipboard</button>
         </div>
       </div>
@@ -199,6 +199,11 @@ tr:hover td{background:rgba(200,240,74,0.012);}
         <div class="g2">
           <div class="f"><label>Owner Name *</label><input id="nk-name" placeholder="John Smith"></div>
           <div class="f"><label>Owner Email</label><input id="nk-email" type="email" placeholder="john@example.com"></div>
+        </div>
+        <div class="f">
+          <label>Access Key <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(leave blank to auto-generate)</span></label>
+          <input id="nk-custom" placeholder="e.g. abc1, john2025, mykey — your choice" autocomplete="off" style="font-family:var(--mono)">
+          <div style="font-size:0.68rem;color:var(--muted);margin-top:4px">Min 3 chars, no spaces. Users will type this to log in.</div>
         </div>
         <div class="f"><label>Expires (optional)</label><input id="nk-exp" type="datetime-local"></div>
         <div class="f"><label>Notes</label><textarea id="nk-notes" rows="2" placeholder="Optional notes…"></textarea></div>
@@ -217,6 +222,35 @@ tr:hover td{background:rgba(200,240,74,0.012);}
     <div class="m-top"><div class="m-title" id="logins-title">Logins</div><button class="m-close" onclick="closeLogins()">✕</button></div>
     <div class="m-body" id="logins-body">Loading…</div>
     <div class="m-foot"><button class="mf-btn mf-cancel" onclick="closeLogins()">Close</button></div>
+  </div>
+</div>
+
+<!-- ═══ EDIT KEY MODAL ════════════════════════════════════════════════════ -->
+<div class="overlay" id="ov-edit">
+  <div class="modal">
+    <div class="m-top"><div class="m-title">Edit Access Key</div><button class="m-close" onclick="closeEdit()">✕</button></div>
+    <div class="m-body">
+      <input type="hidden" id="ek-id">
+      <div class="f">
+        <label>Access Key <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(change to set a new key)</span></label>
+        <input id="ek-key" autocomplete="off" style="font-family:var(--mono)" placeholder="Type new key or leave to keep current">
+        <div style="font-size:0.68rem;color:var(--muted);margin-top:4px">Current key shown above. Min 3 chars, no spaces.</div>
+      </div>
+      <div class="g2">
+        <div class="f"><label>Owner Name</label><input id="ek-name"></div>
+        <div class="f"><label>Owner Email</label><input id="ek-email" type="email"></div>
+      </div>
+      <div class="f"><label>Expires (optional)</label><input id="ek-exp" type="datetime-local"></div>
+      <div class="f"><label>Notes</label><textarea id="ek-notes" rows="2"></textarea></div>
+      <div class="f" style="display:flex;align-items:center;gap:10px;margin-top:4px">
+        <input type="checkbox" id="ek-active" style="width:auto;accent-color:var(--accent)">
+        <label for="ek-active" style="text-transform:none;letter-spacing:0;font-size:0.82rem;cursor:pointer">Key is active</label>
+      </div>
+    </div>
+    <div class="m-foot">
+      <button class="mf-btn mf-cancel" onclick="closeEdit()">Cancel</button>
+      <button class="mf-btn mf-save" onclick="saveEdit()">Save Changes</button>
+    </div>
   </div>
 </div>
 
@@ -259,9 +293,10 @@ function renderKeys(list){
     const statusPill = expired ? '<span class="pill p-expired">Expired</span>' :
                        k.is_active ? '<span class="pill p-active">Active</span>' : '<span class="pill p-inactive">Disabled</span>';
     const exp = k.expires_at ? k.expires_at.slice(0,10) : '—';
+    const keyDisplay = k.custom_key || k.key_preview;
     return `<tr>
       <td class="mono-cell">#${k.id}</td>
-      <td class="mono-cell" style="color:var(--accent)">${x(k.key_preview)}</td>
+      <td class="mono-cell" style="color:var(--accent)">${x(keyDisplay)}</td>
       <td style="font-weight:600">${x(k.owner_name)}</td>
       <td style="color:var(--muted);font-size:0.78rem">${x(k.owner_email||'—')}</td>
       <td>${statusPill}</td>
@@ -270,7 +305,7 @@ function renderKeys(list){
       <td>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
           <button class="r-btn r-view" onclick="viewLogins(${k.id},'${x(k.owner_name)}')">Logins</button>
-          <button class="r-btn r-toggle" onclick="toggleKey(${k.id},${!k.is_active})">${k.is_active?'Disable':'Enable'}</button>
+          <button class="r-btn" style="background:rgba(167,139,250,0.12);color:var(--purple)" onclick="openEdit(${k.id})">Edit</button>
           <button class="r-btn r-del" onclick="deleteKey(${k.id})">Delete</button>
         </div>
       </td>
@@ -285,23 +320,31 @@ function openNewKey(){
   document.getElementById('new-key-form').style.display='block';
   document.getElementById('gen-btn').style.display='';
   document.getElementById('new-key-val').textContent='—';
-  ['nk-name','nk-email','nk-exp','nk-notes'].forEach(id=>document.getElementById(id).value='');
+  ['nk-name','nk-email','nk-custom','nk-exp','nk-notes'].forEach(id=>document.getElementById(id).value='');
 }
 function closeNew(){document.getElementById('ov-new').classList.remove('open');}
 
 async function generateKey(){
   const name=document.getElementById('nk-name').value.trim();
   if(!name){toast('Owner name required',true);return;}
+  const customKey=document.getElementById('nk-custom').value.trim();
   const data={
     owner_name:name,
     owner_email:document.getElementById('nk-email').value.trim(),
+    custom_key:customKey||null,
     expires_at:document.getElementById('nk-exp').value||null,
     notes:document.getElementById('nk-notes').value.trim()
   };
   const res=await fetch('/api/admin/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   const d=await res.json();
-  if(!d.ok){toast('Error generating key',true);return;}
+  if(!d.ok){toast(d.error||'Error generating key',true);return;}
   document.getElementById('new-key-val').textContent=d.raw_key;
+  document.getElementById('key-reveal-label').textContent=d.is_custom
+    ? '🔑 Custom Access Key — share with user'
+    : '🔑 Auto-generated Key — copy now!';
+  document.getElementById('key-reveal-warn').textContent=d.is_custom
+    ? 'This is the key you set. Share it with the user so they can log in.'
+    : 'This key is shown only once. Share it with the user immediately.';
   document.getElementById('key-reveal-area').style.display='block';
   document.getElementById('new-key-form').style.display='none';
   document.getElementById('gen-btn').style.display='none';
@@ -379,7 +422,43 @@ function toast(msg,isErr=false){
   clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('show'),3000);
 }
 function x(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-['ov-new','ov-logins'].forEach(id=>{document.getElementById(id).addEventListener('click',e=>{if(e.target===e.currentTarget)document.getElementById(id).classList.remove('open');});});
+/* ── Edit Key Modal ── */
+function openEdit(id){
+  const k=allKeys.find(z=>z.id===id); if(!k)return;
+  document.getElementById('ek-id').value=id;
+  document.getElementById('ek-key').value=k.custom_key||'';
+  document.getElementById('ek-key').placeholder=k.custom_key
+    ? 'Current: '+k.custom_key+' — type to change'
+    : 'Current: auto-generated — type to set a custom key';
+  document.getElementById('ek-name').value=k.owner_name||'';
+  document.getElementById('ek-email').value=k.owner_email||'';
+  document.getElementById('ek-exp').value=k.expires_at?(k.expires_at.slice(0,16)):'';
+  document.getElementById('ek-notes').value=k.notes||'';
+  document.getElementById('ek-active').checked=k.is_active;
+  document.getElementById('ov-edit').classList.add('open');
+}
+function closeEdit(){document.getElementById('ov-edit').classList.remove('open');}
+
+async function saveEdit(){
+  const id=document.getElementById('ek-id').value;
+  const newKey=document.getElementById('ek-key').value.trim();
+  const data={
+    owner_name:document.getElementById('ek-name').value.trim(),
+    owner_email:document.getElementById('ek-email').value.trim(),
+    is_active:document.getElementById('ek-active').checked,
+    expires_at:document.getElementById('ek-exp').value||null,
+    notes:document.getElementById('ek-notes').value.trim(),
+    custom_key:newKey||null,
+  };
+  const res=await fetch(`/api/admin/keys/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  const d=await res.json();
+  if(!d.ok){toast(d.error||'Save failed',true);return;}
+  closeEdit();
+  toast(newKey?`✓ Key updated to "${newKey}"`:'✓ Changes saved');
+  await loadStats(); await loadKeys();
+}
+
+['ov-new','ov-logins','ov-edit'].forEach(id=>{document.getElementById(id).addEventListener('click',e=>{if(e.target===e.currentTarget)document.getElementById(id).classList.remove('open');});});
 </script>
 </body>
 </html>
