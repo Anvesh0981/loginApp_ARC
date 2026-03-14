@@ -229,37 +229,18 @@ def debug_vnc():
     info["PLAYWRIGHT_CHROMIUM"] = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "not set")
     return jsonify(info)
 
-@app.route("/novnc")
-@app.route("/novnc/<path:filename>")
-def novnc_static(filename="vnc.html"):
-    """Serve noVNC static files — no auth needed for JS/CSS assets."""
-    novnc_path = "/usr/share/novnc"
-    import os
-    filepath = os.path.join(novnc_path, filename)
-    if os.path.isfile(filepath):
-        from flask import send_file
-        return send_file(filepath)
-    # Also check core subdir
-    filepath2 = os.path.join(novnc_path, "core", filename.replace("core/",""))
-    if os.path.isfile(filepath2):
-        from flask import send_file
-        return send_file(filepath2)
-    return "Not found", 404
 
-# WebSocket proxy: /websockify -> websockify process on :6080 -> VNC :5900
-# Uses raw HTTP upgrade proxy since flask-sock has issues with gthread
-# WebSocket is handled directly by websockify on port 6080
-# noVNC connects to ws://host/websockify which is proxied via nginx or
-# handled by the VNC frame page connecting to the correct endpoint
+
 if _has_sock:
     @sock.route("/websockify")
-    def websockify_ws(ws):
-        """Proxy noVNC WebSocket -> local websockify TCP -> VNC."""
+    @sock.route("/vnc-proxy/websockify")
+    def _vnc_ws_handler(ws):
         import socket
         try:
             backend = socket.create_connection(("localhost", 5900), timeout=3)
+            print("[VNC] WebSocket connected to VNC", flush=True)
         except Exception as e:
-            print(f"[VNC] Cannot connect to VNC: {e}", flush=True)
+            print(f"[VNC] VNC connection failed: {e}", flush=True)
             return
         def vnc_to_ws():
             try:
@@ -268,6 +249,9 @@ if _has_sock:
                     if not d: break
                     ws.send(d)
             except Exception: pass
+            finally:
+                try: backend.close()
+                except: pass
         t = threading.Thread(target=vnc_to_ws, daemon=True)
         t.start()
         try:
@@ -280,458 +264,63 @@ if _has_sock:
         finally:
             try: backend.close()
             except: pass
+            t.join(timeout=1)
 
 @app.route("/vnc")
 @require_user
 def vnc_viewer():
-    """VNC viewer - noVNC connects to websockify running on port 6080."""
-    # Since Railway only exposes one port, we use a token trick:
-    # noVNC page is served by Flask, but WebSocket goes to websockify
-    # via a path-based proxy handled by the gevent worker
-    host = request.host  # e.g. web-production-xxx.up.railway.app
-    # Use wss:// for https, ws:// for http
-    ws_scheme = "wss" if request.is_secure else "ws"
-    return f"""<!DOCTYPE html>
+    """Main VNC page - embeds noVNC in an iframe via /vnc-proxy/."""
+    return """<!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Vault Live Browser</title>
+<meta charset="UTF-8"><title>Vault Live Browser</title>
 <style>
-*{{margin:0;padding:0;box-sizing:border-box}}
-body{{background:#0c0e15;font-family:system-ui,sans-serif;height:100vh;display:flex;flex-direction:column}}
-.bar{{background:#13161f;border-bottom:1px solid #1e2535;padding:0 20px;height:44px;
-      display:flex;align-items:center;gap:10px;flex-shrink:0}}
-.logo{{color:#c8f04a;font-weight:800;font-size:0.88rem}}
-.steps{{display:flex;gap:5px}}
-.step{{font-size:0.7rem;padding:3px 10px;border-radius:99px;border:1px solid #1e2535;color:#5a6480}}
-.back{{margin-left:auto;color:#5b9cf6;font-size:0.78rem;text-decoration:none;
-       padding:4px 12px;border:1px solid rgba(91,156,246,0.3);border-radius:6px}}
-iframe{{flex:1;width:100%;border:none}}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0c0e15;font-family:system-ui,sans-serif;height:100vh;display:flex;flex-direction:column}
+.bar{background:#13161f;border-bottom:1px solid #1e2535;padding:0 20px;height:44px;
+     display:flex;align-items:center;gap:10px;flex-shrink:0}
+.logo{color:#c8f04a;font-weight:800;font-size:0.88rem}
+.steps{display:flex;gap:5px}
+.step{font-size:0.7rem;padding:3px 10px;border-radius:99px;border:1px solid #1e2535;color:#5a6480}
+.back{margin-left:auto;color:#5b9cf6;font-size:0.78rem;text-decoration:none;
+      padding:4px 12px;border:1px solid rgba(91,156,246,0.3);border-radius:6px}
+iframe{flex:1;width:100%;border:none}
 </style>
 </head>
 <body>
   <div class="bar">
-    <span class="logo">🔐 Vault Live Browser</span>
+    <span class="logo">&#128272; Vault Live Browser</span>
     <div class="steps">
       <span class="step">1 Solve captcha</span>
       <span class="step">2 Sign In</span>
       <span class="step">3 Answers filled</span>
       <span class="step">4 Continue</span>
     </div>
-    <a href="/dashboard" class="back">← Dashboard</a>
+    <a href="/dashboard" class="back">&#8592; Dashboard</a>
   </div>
-  <iframe src="/vnc-frame" allowfullscreen></iframe>
+  <iframe src="/vnc-proxy/vnc.html?autoconnect=true&resize=scale&reconnect=true&path=vnc-proxy/websockify" allowfullscreen></iframe>
 </body>
 </html>"""
 
-@app.route("/vnc-frame")
-@require_user
-def vnc_frame():
-    """Proxy noVNC page from websockify with correct WebSocket URL injected."""
-    import urllib.request, urllib.error
-    try:
-        # Fetch noVNC page from local websockify
-        with urllib.request.urlopen("http://localhost:6080/vnc.html", timeout=3) as r:
-            html = r.read().decode("utf-8", errors="replace")
-    except Exception:
-        # Fallback: serve from filesystem
-        try:
-            with open("/usr/share/novnc/vnc.html") as f:
-                html = f.read()
-        except Exception as e:
-            return f"noVNC not available: {e}", 500
-
-    # Inject auto-connect script
-    inject = """<script>
-window.addEventListener('load', function() {
-  setTimeout(function() {
-    try {
-      var host = window.location.hostname;
-      var port = window.location.port || (location.protocol==='https:'?'443':'80');
-      if (typeof UI !== 'undefined') {
-        UI.initSetting('host', host);
-        UI.initSetting('port', port);
-        UI.initSetting('path', 'websockify');
-        UI.initSetting('encrypt', location.protocol === 'https:');
-        UI.initSetting('resize', 'scale');
-        UI.initSetting('reconnect', true);
-        UI.connect();
-      }
-    } catch(e) { console.log('noVNC connect error:', e); }
-  }, 800);
-});
-</script></body>"""
-    html = html.replace("</body>", inject).replace("</BODY>", inject)
-    return html, 200, {"Content-Type": "text/html; charset=utf-8",
-                       "Cache-Control": "no-cache"}
-
-@app.route("/novnc/core/<path:filename>")
-@app.route("/core/<path:filename>")
-def novnc_core(filename):
-    """Serve noVNC core JS files."""
-    import os
-    for base in ["/usr/share/novnc/core", "/usr/share/novnc"]:
-        fp = os.path.join(base, filename)
-        if os.path.isfile(fp):
-            from flask import send_file
-            return send_file(fp)
-    # Try proxying from websockify
+@app.route("/vnc-proxy/", defaults={"path": "vnc.html"})
+@app.route("/vnc-proxy/<path:path>")
+def vnc_proxy(path):
+    """Proxy noVNC static files from websockify:6080. WebSocket handled by flask-sock."""
     import urllib.request
+    # WebSocket requests are handled by flask-sock route above
+    if request.environ.get("HTTP_UPGRADE", "").lower() == "websocket":
+        return "WebSocket handled by sock route", 400
+    url = f"http://localhost:6080/{path}"
+    if request.query_string:
+        url += "?" + request.query_string.decode()
     try:
-        with urllib.request.urlopen(f"http://localhost:6080/core/{filename}", timeout=3) as r:
-            return r.read(), 200, {"Content-Type": r.headers.get("Content-Type","text/javascript")}
-    except Exception:
-        return "Not found", 404
-
-@app.route("/setup-db")
-def setup_db():
-    secret = request.args.get("key", "")
-    setup_secret = os.environ.get("SETUP_SECRET", "")
-    if not setup_secret or secret != setup_secret:
-        return "forbidden", 403
-    try:
-        init_db()
-        return "Tables created successfully!", 200
+        with urllib.request.urlopen(url, timeout=5) as r:
+            data = r.read()
+            ct = r.headers.get("Content-Type", "application/octet-stream")
+            return data, 200, {"Content-Type": ct, "Cache-Control": "no-cache"}
     except Exception as e:
-        return f"Error: {e}", 500
+        return f"Proxy error for {path}: {e}", 502
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  PUBLIC — Access key login
-# ══════════════════════════════════════════════════════════════════════════════
-@app.route("/")
-def root():
-    if session.get("is_admin"):
-        return redirect(url_for("admin_dashboard"))
-    if session.get("key_id"):
-        return redirect(url_for("user_dashboard"))
-    return redirect(url_for("login_page"))
-
-@app.route("/login", methods=["GET"])
-def login_page():
-    return render_template("login.html")
-
-@app.route("/login", methods=["POST"])
-def do_login():
-    raw_key = request.json.get("access_key", "").strip()
-    if not raw_key:
-        return jsonify({"ok": False, "error": "Access key required"})
-
-    conn = get_db()
-    c = conn.cursor()
-    c.execute(
-        """SELECT * FROM access_keys
-           WHERE key_hash=%s AND is_active=TRUE
-           AND (expires_at IS NULL OR expires_at > NOW())""",
-        (hash_key(raw_key),)
-    )
-    row = c.fetchone()
-    conn.close()
-
-    if not row:
-        return jsonify({"ok": False, "error": "Invalid or expired access key"})
-
-    session["key_id"]    = row["id"]
-    session["key_owner"] = row["owner_name"]
-    log_action(row["id"], "LOGIN", f"User {row['owner_name']} logged in")
-    return jsonify({"ok": True})
-
-@app.route("/logout")
-def logout():
-    kid = session.get("key_id")
-    if kid:
-        log_action(kid, "LOGOUT", "")
-    session.clear()
-    return redirect(url_for("login_page"))
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  USER DASHBOARD
-# ══════════════════════════════════════════════════════════════════════════════
-@app.route("/dashboard")
-@require_user
-def user_dashboard():
-    return render_template("dashboard.html",
-                           owner=session["key_owner"],
-                           question_options=SECURITY_QUESTION_OPTIONS,
-                           target_url=TARGET_URL,
-                           statuses=LOGIN_STATUSES)
-
-# ── User API ──────────────────────────────────────────────────────────────────
-@app.route("/api/logins", methods=["GET"])
-@require_user
-def api_list():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute(
-        "SELECT * FROM logins WHERE key_id=%s ORDER BY created_at DESC",
-        (session["key_id"],)
-    )
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
-
-@app.route("/api/logins", methods=["POST"])
-@require_user
-def api_create():
-    d = request.json
-    conn = get_db()
-    c = conn.cursor()
-    c.execute(
-        """INSERT INTO logins
-           (key_id,label,username,password,
-            sel_q1,ans_q1,sel_q2,ans_q2,sel_q3,ans_q3,
-            target_date,status,notes)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-        (session["key_id"], d.get("label",""), d.get("username",""),
-         d.get("password",""),
-         d.get("sel_q1",""), d.get("ans_q1",""),
-         d.get("sel_q2",""), d.get("ans_q2",""),
-         d.get("sel_q3",""), d.get("ans_q3",""),
-         d.get("target_date",""), d.get("status","pending"), d.get("notes",""))
-    )
-    new_id = c.fetchone()["id"]
-    conn.commit()
-    conn.close()
-    log_action(session["key_id"], "CREATE_LOGIN", f"Label: {d.get('label','')}")
-    return jsonify({"ok": True, "id": new_id})
-
-@app.route("/api/logins/<int:lid>", methods=["PUT"])
-@require_user
-def api_update(lid):
-    d = request.json
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT id FROM logins WHERE id=%s AND key_id=%s", (lid, session["key_id"]))
-    if not c.fetchone():
-        conn.close()
-        return jsonify({"ok": False, "error": "Not found"}), 404
-
-    params = [d.get("label",""), d.get("username",""), d.get("password",""),
-              d.get("sel_q1",""), d.get("ans_q1",""),
-              d.get("sel_q2",""), d.get("ans_q2",""),
-              d.get("sel_q3",""), d.get("ans_q3",""),
-              d.get("target_date",""), d.get("status","pending"), d.get("notes",""),
-              lid, session["key_id"]]
-
-    if d.get("status") == "completed":
-        c.execute(
-            """UPDATE logins SET label=%s,username=%s,password=%s,
-               sel_q1=%s,ans_q1=%s,sel_q2=%s,ans_q2=%s,sel_q3=%s,ans_q3=%s,
-               target_date=%s,status=%s,notes=%s,
-               updated_at=NOW(),completed_at=NOW()
-               WHERE id=%s AND key_id=%s""", params
-        )
-    else:
-        c.execute(
-            """UPDATE logins SET label=%s,username=%s,password=%s,
-               sel_q1=%s,ans_q1=%s,sel_q2=%s,ans_q2=%s,sel_q3=%s,ans_q3=%s,
-               target_date=%s,status=%s,notes=%s,
-               updated_at=NOW(),completed_at=NULL
-               WHERE id=%s AND key_id=%s""", params
-        )
-    conn.commit()
-    conn.close()
-    log_action(session["key_id"], "UPDATE_LOGIN", f"ID:{lid} status:{d.get('status')}")
-    return jsonify({"ok": True})
-
-@app.route("/api/logins/<int:lid>", methods=["DELETE"])
-@require_user
-def api_delete(lid):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("DELETE FROM logins WHERE id=%s AND key_id=%s", (lid, session["key_id"]))
-    conn.commit()
-    conn.close()
-    log_action(session["key_id"], "DELETE_LOGIN", f"ID:{lid}")
-    return jsonify({"ok": True})
-
-@app.route("/api/stats", methods=["GET"])
-@require_user
-def api_stats():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT status, COUNT(*) as n FROM logins WHERE key_id=%s GROUP BY status",
-              (session["key_id"],))
-    rows = c.fetchall()
-    conn.close()
-    counts = {r["status"]: r["n"] for r in rows}
-    total = sum(counts.values())
-    return jsonify({
-        "total":       total,
-        "pending":     counts.get("pending", 0),
-        "in_progress": counts.get("in_progress", 0),
-        "completed":   counts.get("completed", 0),
-        "failed":      counts.get("failed", 0),
-    })
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  ADMIN
-# ══════════════════════════════════════════════════════════════════════════════
-@app.route("/admin/login", methods=["GET"])
-def admin_login_page():
-    return render_template("admin_login.html")
-
-@app.route("/admin/login", methods=["POST"])
-def admin_do_login():
-    pw = request.json.get("password", "")
-    if pw != ADMIN_PASSWORD:
-        return jsonify({"ok": False, "error": "Wrong password"})
-    session["is_admin"] = True
-    return jsonify({"ok": True})
-
-@app.route("/admin/logout")
-def admin_logout():
-    session.pop("is_admin", None)
-    return redirect(url_for("admin_login_page"))
-
-@app.route("/admin")
-@require_admin
-def admin_dashboard():
-    return render_template("admin.html")
-
-# ── Admin API ─────────────────────────────────────────────────────────────────
-@app.route("/api/admin/keys", methods=["GET"])
-@require_admin
-def admin_list_keys():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        SELECT ak.*, COUNT(l.id) as login_count
-        FROM access_keys ak
-        LEFT JOIN logins l ON l.key_id = ak.id
-        GROUP BY ak.id ORDER BY ak.created_at DESC
-    """)
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
-
-@app.route("/api/admin/keys", methods=["POST"])
-@require_admin
-def admin_create_key():
-    d = request.json
-    custom = (d.get("custom_key") or "").strip()
-    if custom:
-        if len(custom) < 3 or " " in custom:
-            return jsonify({"ok": False, "error": "Key must be at least 3 characters with no spaces"})
-        raw_key = custom
-    else:
-        raw_key = "VLT-" + secrets.token_urlsafe(20)
-
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT id FROM access_keys WHERE custom_key=%s", (raw_key,))
-    if c.fetchone():
-        conn.close()
-        return jsonify({"ok": False, "error": f"Key \"{raw_key}\" is already in use. Choose a different one."})
-
-    expires = d.get("expires_at") or None
-    c.execute(
-        """INSERT INTO access_keys
-           (key_hash,key_preview,custom_key,owner_name,owner_email,expires_at,notes)
-           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-        (hash_key(raw_key), raw_key if len(raw_key) <= 14 else raw_key[:12]+"...",
-         raw_key if custom else None,
-         d.get("owner_name",""), d.get("owner_email",""),
-         expires, d.get("notes",""))
-    )
-    new_id = c.fetchone()["id"]
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True, "id": new_id, "raw_key": raw_key, "is_custom": bool(custom)})
-
-@app.route("/api/admin/keys/<int:kid>", methods=["PUT"])
-@require_admin
-def admin_update_key(kid):
-    d = request.json
-    new_key = (d.get("custom_key") or "").strip()
-
-    conn = get_db()
-    c = conn.cursor()
-
-    if new_key:
-        if len(new_key) < 3 or " " in new_key:
-            conn.close()
-            return jsonify({"ok": False, "error": "Key must be at least 3 characters with no spaces"})
-        c.execute("SELECT id FROM access_keys WHERE custom_key=%s AND id!=%s", (new_key, kid))
-        if c.fetchone():
-            conn.close()
-            return jsonify({"ok": False, "error": f"Key \"{new_key}\" is already in use."})
-        c.execute(
-            """UPDATE access_keys SET owner_name=%s,owner_email=%s,is_active=%s,
-               expires_at=%s,notes=%s,key_hash=%s,key_preview=%s,custom_key=%s
-               WHERE id=%s""",
-            (d.get("owner_name",""), d.get("owner_email",""),
-             d.get("is_active", True), d.get("expires_at") or None, d.get("notes",""),
-             hash_key(new_key),
-             new_key if len(new_key) <= 14 else new_key[:12]+"...",
-             new_key, kid)
-        )
-    else:
-        c.execute(
-            """UPDATE access_keys SET owner_name=%s,owner_email=%s,
-               is_active=%s,expires_at=%s,notes=%s WHERE id=%s""",
-            (d.get("owner_name",""), d.get("owner_email",""),
-             d.get("is_active", True), d.get("expires_at") or None,
-             d.get("notes",""), kid)
-        )
-
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True})
-
-@app.route("/api/admin/keys/<int:kid>", methods=["DELETE"])
-@require_admin
-def admin_delete_key(kid):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("DELETE FROM access_keys WHERE id=%s", (kid,))
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True})
-
-@app.route("/api/admin/keys/<int:kid>/logins", methods=["GET"])
-@require_admin
-def admin_key_logins(kid):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM logins WHERE key_id=%s ORDER BY created_at DESC", (kid,))
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
-
-@app.route("/api/admin/stats", methods=["GET"])
-@require_admin
-def admin_stats():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) as n FROM access_keys")
-    total_keys = c.fetchone()["n"]
-    c.execute("SELECT COUNT(*) as n FROM access_keys WHERE is_active=TRUE")
-    active_keys = c.fetchone()["n"]
-    c.execute("SELECT COUNT(*) as n FROM logins")
-    total_logins = c.fetchone()["n"]
-    c.execute("SELECT COUNT(*) as n FROM logins WHERE status='completed'")
-    completed = c.fetchone()["n"]
-    conn.close()
-    return jsonify({"total_keys": total_keys, "active_keys": active_keys,
-                    "total_logins": total_logins, "completed": completed})
-
-@app.route("/api/admin/logs", methods=["GET"])
-@require_admin
-def admin_logs():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        SELECT al.*, ak.owner_name
-        FROM audit_log al
-        LEFT JOIN access_keys ak ON ak.id = al.key_id
-        ORDER BY al.created_at DESC LIMIT 200
-    """)
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  PLAYWRIGHT RUN
 
 @app.route("/api/run/captcha/<int:lid>", methods=["POST"])
 @require_user

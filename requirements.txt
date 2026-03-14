@@ -4,5 +4,3 @@ gunicorn>=21.2.0
 playwright==1.40.0
 flask-sock>=0.7.0
 simple-websocket>=1.0.0
-gevent>=23.0.0
-gevent-websocket>=0.10.1

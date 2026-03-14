@@ -26,20 +26,26 @@ vnc = subprocess.Popen([
 procs.append(vnc)
 time.sleep(1)
 
+# websockify bridges WebSocket -> VNC TCP on same port as Flask
+# It serves noVNC static files AND handles WebSocket on port 6080
 print("Starting websockify :6080 -> :5900 ...", flush=True)
 ws = subprocess.Popen([
-    "websockify", "--heartbeat", "30",
+    "websockify",
+    "--web", "/usr/share/novnc",
+    "--heartbeat", "30",
     "6080", "localhost:5900"
 ])
 procs.append(ws)
 time.sleep(1)
 
-print(f"Starting gunicorn on :{port} (gevent) ...", flush=True)
+# Flask on the main Railway port - uses gthread (no gevent needed)
+print(f"Starting gunicorn on :{port} ...", flush=True)
 gunicorn = subprocess.Popen([
     "gunicorn", "app:app",
     "--bind", f"0.0.0.0:{port}",
     "--workers", "1",
-    "--worker-class", "geventwebsocket.gunicorn.workers.GeventWebSocketWorker",
+    "--worker-class", "gthread",
+    "--threads", "8",
     "--timeout", "300",
 ])
 procs.append(gunicorn)
