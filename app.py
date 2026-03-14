@@ -168,6 +168,39 @@ def require_admin(f):
 def healthz():
     return "ok", 200
 
+@app.route("/debug/playwright")
+def debug_playwright():
+    """Test Playwright launch directly — shows result in browser."""
+    import shutil, traceback
+    result = {}
+    try:
+        os.environ["DISPLAY"] = ":99"
+        chromium_path = (
+            os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or
+            shutil.which("chromium") or "/usr/bin/chromium"
+        )
+        result["chromium_path"] = chromium_path
+        result["chromium_exists"] = os.path.isfile(chromium_path or "")
+
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(
+                headless=False,
+                executable_path=chromium_path,
+                args=["--no-sandbox","--disable-setuid-sandbox",
+                      "--disable-dev-shm-usage"]
+            )
+            page = browser.new_page()
+            page.goto("about:blank")
+            result["status"] = "SUCCESS - Playwright launched!"
+            result["title"] = page.title()
+            browser.close()
+    except Exception as e:
+        result["status"] = "FAILED"
+        result["error"] = str(e)
+        result["traceback"] = traceback.format_exc()
+    return jsonify(result)
+
 @app.route("/debug/vnc")
 def debug_vnc():
     """Debug — check VNC and noVNC status. Remove after confirming it works."""
