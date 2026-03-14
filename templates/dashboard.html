@@ -297,12 +297,24 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
     <div class="run-top">
       <div>
         <div class="run-title">&#9654; Run &#8212; <span id="run-label">&#8212;</span></div>
-        <div class="run-sub">Extension auto-fills everything. You just solve the captcha.</div>
+        <div class="run-sub">Server opens a real browser, fills everything. You solve captcha &amp; take control after.</div>
       </div>
       <button class="m-close" onclick="closeRun()">&#10005;</button>
     </div>
     <div class="run-body">
 
+      <div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">&#9889; Chrome Extension ID</span>
+          <span id="ext-pill" style="font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)">Not set</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <input id="ext-id-input" placeholder="Paste extension ID here (one time only)"
+            style="flex:1;background:var(--card);border:1px solid var(--border2);border-radius:7px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:0.75rem;outline:none">
+          <button onclick="saveExtId()" style="padding:8px 14px;border-radius:7px;border:1px solid rgba(200,240,74,0.3);background:rgba(200,240,74,0.1);color:var(--accent);cursor:pointer;font-size:0.75rem;font-weight:700">Save</button>
+        </div>
+        <div style="font-size:0.65rem;color:var(--muted2);margin-top:6px;line-height:1.5">Chrome &#8594; <b>chrome://extensions</b> &#8594; Developer Mode ON &#8594; copy the ID</div>
+      </div>
       <button class="run-url-btn" id="run-url-btn" onclick="doRun()">&#9654; Run &#8212; Open &amp; Auto-Fill Everything</button>
       <div id="run-status" style="font-size:0.75rem;color:var(--muted);text-align:center;margin-top:8px;min-height:18px"></div>
       <div class="run-section" style="margin-top:14px">
@@ -480,6 +492,14 @@ function openRun(id){
   document.getElementById('run-password-disp').classList.add('masked');
   document.getElementById('run-show-btn').textContent='Show';
   document.getElementById('run-status').textContent='';
+  const savedId=localStorage.getItem('vault_ext_id')||'';
+  const extInp=document.getElementById('ext-id-input');
+  const extPill=document.getElementById('ext-pill');
+  if(extInp) extInp.value=savedId;
+  if(extPill){
+    if(savedId){extPill.textContent='Connected';extPill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';}
+    else{extPill.textContent='Not set';extPill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';}
+  }
   const pairs=[[l.sel_q1,l.ans_q1],[l.sel_q2,l.ans_q2],[l.sel_q3,l.ans_q3]].filter(([q,a])=>q||a);
   const sqList=document.getElementById('run-sq-list');
   if(pairs.length){
@@ -491,69 +511,60 @@ function openRun(id){
   document.getElementById('run-overlay').classList.add('open');
 }
 function closeRun(){document.getElementById('run-overlay').classList.remove('open');}
-async function doRun(){
-  const btn = document.getElementById('run-url-btn');
-  const status = document.getElementById('run-status');
-  const loginId = _runData.id;
-  if (!loginId) { status.textContent = 'No login selected'; return; }
-
-  btn.textContent = 'Launching browser on server…';
-  btn.disabled = true;
-  status.style.color = 'var(--muted)';
-  status.textContent = 'Starting Playwright…';
-
-  const evtSource = new EventSource('/api/run/' + loginId);
-
-  evtSource.addEventListener('status', e => {
-    const d = JSON.parse(e.data);
-    status.style.color = d.take_control ? 'var(--green)' : d.done ? 'var(--green)' : 'var(--accent)';
-
-    if (d.waiting_captcha) {
-      // Show link to open browser for captcha
-      status.innerHTML = d.msg +
-        ' <a href="/vnc" target="_blank" ' +
-        'style="color:var(--accent);font-weight:700;background:rgba(200,240,74,0.1);' +
-        'border:1px solid rgba(200,240,74,0.3);padding:3px 10px;border-radius:6px;' +
-        'text-decoration:none;margin-left:6px;font-size:0.8rem">' +
-        '🖥 Open Browser →</a>';
-      btn.textContent = '⏳ Waiting for captcha…';
-
-    } else if (d.take_control) {
-      // Automation done — invite user to take over
-      status.innerHTML =
-        '<div style="margin-bottom:8px;color:var(--green);font-weight:600">' + d.msg + '</div>' +
-        '<a href="/vnc" target="_blank" ' +
-        'style="display:inline-block;padding:10px 20px;background:var(--accent);color:#0c0e15;' +
-        'font-weight:800;border-radius:8px;text-decoration:none;font-family:var(--serif);font-size:0.9rem">' +
-        '🖥 Take Control of Browser →</a>' +
-        '<div style="font-size:0.7rem;color:var(--muted);margin-top:6px">' +
-        'Browser stays open 30 min. Click Continue, navigate, do your work.</div>';
-      btn.textContent = 'Run Again';
-      btn.disabled = false;
-      evtSource.close();
-
-    } else {
-      status.textContent = d.msg;
-    }
-
-    if (d.done) {
-      btn.textContent = 'Run — Open & Auto-Fill Everything';
-      btn.disabled = false;
-      evtSource.close();
-    }
-  });
-
-  evtSource.addEventListener('error', e => {
-    try { const d = JSON.parse(e.data); status.style.color='var(--red)'; status.textContent='✗ '+d.msg; } catch(err) {}
-    btn.textContent = 'Run — Open & Auto-Fill Everything'; btn.disabled = false; evtSource.close();
-  });
-
-  evtSource.onerror = () => {
-    if (evtSource.readyState === EventSource.CLOSED) return;
-    status.style.color = 'var(--red)'; status.textContent = 'Connection lost';
-    btn.textContent = 'Run — Open & Auto-Fill Everything'; btn.disabled = false; evtSource.close();
-  };
+function saveExtId(){
+  const id=(document.getElementById('ext-id-input').value||'').trim();
+  const pill=document.getElementById('ext-pill');
+  if(id){
+    localStorage.setItem('vault_ext_id',id);
+    pill.textContent='&#10003; Connected';
+    pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';
+  }else{
+    localStorage.removeItem('vault_ext_id');
+    pill.textContent='Not set';
+    pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';
+  }
 }
+
+async function doRun(){
+  const btn=document.getElementById('run-url-btn');
+  const status=document.getElementById('run-status');
+  const extId=localStorage.getItem('vault_ext_id');
+  if(!extId){
+    status.style.color='var(--red)';
+    status.textContent='Paste your Extension ID above and click Save first';
+    document.getElementById('ext-id-input').focus();
+    return;
+  }
+  btn.disabled=true;
+  btn.textContent='Launching...';
+  status.style.color='var(--accent)';
+  status.textContent='Opening browser...';
+  const payload={
+    action:'run_login',
+    data:{
+      username:_runUsername, password:_runPass,
+      sel_q1:_runData.sel_q1||'', ans_q1:_runData.ans_q1||'',
+      sel_q2:_runData.sel_q2||'', ans_q2:_runData.ans_q2||'',
+      sel_q3:_runData.sel_q3||'', ans_q3:_runData.ans_q3||'',
+      target_url:_targetUrl
+    }
+  };
+  try{
+    await new Promise((resolve,reject)=>{
+      chrome.runtime.sendMessage(extId,payload,r=>{
+        if(chrome.runtime.lastError)reject(chrome.runtime.lastError);
+        else resolve(r);
+      });
+    });
+    status.style.color='var(--green)';
+    status.textContent='&#10003; Browser opened — extension filling details now';
+  }catch(e){
+    status.style.color='var(--red)';
+    status.textContent='&#10007; Extension not found — check ID or reinstall';
+  }
+  setTimeout(()=>{btn.textContent='Run &#8212; Open & Auto-Fill Everything';btn.disabled=false;},3000);
+}
+
 function toggleRunPass(){const el=document.getElementById('run-password-disp'),btn=document.getElementById('run-show-btn');if(el.classList.contains('masked')){el.textContent=_runPass;el.classList.remove('masked');btn.textContent='Hide';}else{el.textContent='        ';el.classList.add('masked');btn.textContent='Show';}}
 function copyField(id,btn){navigator.clipboard.writeText(document.getElementById(id).textContent).then(()=>{btn.textContent='Copied!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);});}
 function copyRunPass(btn){navigator.clipboard.writeText(_runPass).then(()=>{btn.textContent='Copied!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);});}
