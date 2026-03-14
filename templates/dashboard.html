@@ -503,13 +503,38 @@ function closeRun(){
   document.getElementById('run-overlay').classList.remove('open');
 }
 
-function doRun(){
+async function doRun(){
   const id = _runData.id;
   if (!id) return;
-  // Navigate in same tab so session cookie is sent
-  document.getElementById('run-status').style.color = 'var(--accent)';
-  document.getElementById('run-status').textContent = 'Launching browser...';
-  window.location.href = '/api/run/' + id;
+  const btn = document.getElementById('run-url-btn');
+  const status = document.getElementById('run-status');
+  btn.disabled = true;
+  btn.textContent = 'Launching...';
+  status.style.color = 'var(--accent)';
+  status.textContent = 'Starting browser on server...';
+
+  try {
+    // Trigger Playwright via POST (keeps session, doesn't navigate away)
+    const res = await fetch('/api/run/' + id, {method: 'POST'});
+    if (res.redirected || res.ok) {
+      status.style.color = 'var(--green)';
+      status.textContent = 'Browser launched! Opening VNC viewer...';
+      setTimeout(() => {
+        // Open VNC in new tab after browser has started
+        window.open('/vnc', '_blank');
+        btn.textContent = 'Run — Open Live Browser';
+        btn.disabled = false;
+        status.textContent = 'VNC opened in new tab';
+      }, 2500);
+    } else {
+      throw new Error('Server returned ' + res.status);
+    }
+  } catch(e) {
+    status.style.color = 'var(--red)';
+    status.textContent = 'Error: ' + e.message;
+    btn.textContent = 'Run — Open Live Browser';
+    btn.disabled = false;
+  }
 }
 
 

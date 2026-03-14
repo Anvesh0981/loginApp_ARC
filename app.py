@@ -874,21 +874,12 @@ def run_login(lid):
     stop_event = threading.Event()
     _browser_sessions[session["key_id"]] = stop_event
 
-    print(f"[Vault] Starting automation for login {lid}, user {session.get('key_id')}", flush=True)
+    print(f"[Vault] Starting automation for login {lid}", flush=True)
     t = threading.Thread(target=automate, daemon=True)
     t.start()
-    print(f"[Vault] Thread started: {t.is_alive()}", flush=True)
-
-    # Wait up to 4s for Playwright to start, then redirect to VNC
-    for _ in range(8):
-        time.sleep(0.5)
-        if t.is_alive():
-            print("[Vault] Thread is running, redirecting to VNC", flush=True)
-            break
-    else:
-        print("[Vault] Thread may have failed to start", flush=True)
-
-    return redirect("/vnc")
+    print(f"[Vault] Thread alive: {t.is_alive()}", flush=True)
+    # Return success — dashboard will open /vnc separately
+    return jsonify({"ok": True, "msg": "Browser launching"})
 
 
 
