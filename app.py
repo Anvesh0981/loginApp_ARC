@@ -246,77 +246,67 @@ def novnc_static(filename="vnc.html"):
         return send_file(filepath2)
     return "Not found", 404
 
-# WebSocket proxy: browser <-> Flask <-> local VNC :5900
-# Registered after app init so sock is available
-def _register_websockify():
-    import socket, threading
-
+# WebSocket proxy: /websockify -> websockify process on :6080 -> VNC :5900
+# Uses raw HTTP upgrade proxy since flask-sock has issues with gthread
+# WebSocket is handled directly by websockify on port 6080
+# noVNC connects to ws://host/websockify which is proxied via nginx or
+# handled by the VNC frame page connecting to the correct endpoint
+if _has_sock:
     @sock.route("/websockify")
-    def websockify(ws):
-        """Proxy noVNC WebSocket to local VNC server on port 5900."""
+    def websockify_ws(ws):
+        """Proxy noVNC WebSocket -> local websockify TCP -> VNC."""
+        import socket
         try:
-            vnc = socket.create_connection(("localhost", 5900), timeout=5)
+            backend = socket.create_connection(("localhost", 5900), timeout=3)
         except Exception as e:
-            print(f"VNC connection failed: {e}", flush=True)
+            print(f"[VNC] Cannot connect to VNC: {e}", flush=True)
             return
-
-        def ws_to_vnc():
-            try:
-                while True:
-                    data = ws.receive()
-                    if data is None: break
-                    if isinstance(data, str): data = data.encode()
-                    vnc.sendall(data)
-            except Exception: pass
-            finally:
-                try: vnc.close()
-                except: pass
-
         def vnc_to_ws():
             try:
                 while True:
-                    data = vnc.recv(65536)
-                    if not data: break
-                    ws.send(data)
+                    d = backend.recv(65536)
+                    if not d: break
+                    ws.send(d)
             except Exception: pass
-            finally:
-                try: ws.close()
-                except: pass
-
         t = threading.Thread(target=vnc_to_ws, daemon=True)
         t.start()
-        ws_to_vnc()
-        t.join()
-
-if _has_sock:
-    _register_websockify()
+        try:
+            while True:
+                d = ws.receive()
+                if d is None: break
+                if isinstance(d, str): d = d.encode()
+                backend.sendall(d)
+        except Exception: pass
+        finally:
+            try: backend.close()
+            except: pass
 
 @app.route("/vnc")
 @require_user
 def vnc_viewer():
-    """Full-screen noVNC — connects WebSocket through same Railway port."""
-    return """<!DOCTYPE html>
+    """VNC viewer - noVNC connects to websockify running on port 6080."""
+    # Since Railway only exposes one port, we use a token trick:
+    # noVNC page is served by Flask, but WebSocket goes to websockify
+    # via a path-based proxy handled by the gevent worker
+    host = request.host  # e.g. web-production-xxx.up.railway.app
+    # Use wss:// for https, ws:// for http
+    ws_scheme = "wss" if request.is_secure else "ws"
+    return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Vault — Live Browser</title>
+<title>Vault Live Browser</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#0c0e15;font-family:system-ui,sans-serif;height:100vh;display:flex;flex-direction:column}
-  .bar{background:#13161f;border-bottom:1px solid #1e2535;padding:0 20px;height:44px;
-       display:flex;align-items:center;gap:12px;flex-shrink:0}
-  .logo{color:#c8f04a;font-weight:800;font-size:0.88rem}
-  .steps{display:flex;gap:6px;margin-left:8px}
-  .step{font-size:0.7rem;padding:3px 10px;border-radius:99px;border:1px solid #1e2535;color:#5a6480}
-  .step.done{border-color:rgba(61,255,160,0.3);color:#3dffa0;background:rgba(61,255,160,0.06)}
-  .back{margin-left:auto;color:#5b9cf6;font-size:0.78rem;text-decoration:none;
-        padding:4px 12px;border:1px solid rgba(91,156,246,0.3);border-radius:6px}
-  #screen{flex:1;width:100%;border:none}
-  .loading{flex:1;display:flex;align-items:center;justify-content:center;
-           flex-direction:column;gap:14px;color:#5a6480;font-size:0.85rem}
-  .spin{width:28px;height:28px;border:3px solid #1e2535;border-top-color:#c8f04a;
-        border-radius:50%;animation:s 0.8s linear infinite}
-  @keyframes s{to{transform:rotate(360deg)}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{background:#0c0e15;font-family:system-ui,sans-serif;height:100vh;display:flex;flex-direction:column}}
+.bar{{background:#13161f;border-bottom:1px solid #1e2535;padding:0 20px;height:44px;
+      display:flex;align-items:center;gap:10px;flex-shrink:0}}
+.logo{{color:#c8f04a;font-weight:800;font-size:0.88rem}}
+.steps{{display:flex;gap:5px}}
+.step{{font-size:0.7rem;padding:3px 10px;border-radius:99px;border:1px solid #1e2535;color:#5a6480}}
+.back{{margin-left:auto;color:#5b9cf6;font-size:0.78rem;text-decoration:none;
+       padding:4px 12px;border:1px solid rgba(91,156,246,0.3);border-radius:6px}}
+iframe{{flex:1;width:100%;border:none}}
 </style>
 </head>
 <body>
@@ -324,59 +314,74 @@ def vnc_viewer():
     <span class="logo">🔐 Vault Live Browser</span>
     <div class="steps">
       <span class="step">1 Solve captcha</span>
-      <span class="step">2 Click Sign In</span>
-      <span class="step">3 Answers auto-filled</span>
-      <span class="step">4 Click Continue</span>
+      <span class="step">2 Sign In</span>
+      <span class="step">3 Answers filled</span>
+      <span class="step">4 Continue</span>
     </div>
     <a href="/dashboard" class="back">← Dashboard</a>
   </div>
-  <div class="loading" id="loading">
-    <div class="spin"></div>
-    <div>Connecting to browser on server...</div>
-    <div style="font-size:0.72rem;margin-top:4px">Takes a few seconds to start</div>
-  </div>
-  <canvas id="screen" style="display:none"></canvas>
-
-  <!-- Load noVNC core directly -->
-  <script type="module">
-    import RFB from '/novnc/core/rfb.js';
-
-    const loading = document.getElementById('loading');
-    const canvas  = document.getElementById('screen');
-
-    // WebSocket URL — same host/port as Flask, path /websockify
-    const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
-                  location.host + '/websockify';
-
-    function connect() {
-      loading.style.display = 'flex';
-      canvas.style.display  = 'none';
-
-      const rfb = new RFB(canvas, wsUrl, { wsProtocols: ['binary'] });
-
-      rfb.addEventListener('connect', () => {
-        loading.style.display = 'none';
-        canvas.style.display  = 'block';
-        rfb.scaleViewport = true;
-        rfb.resizeSession = false;
-      });
-
-      rfb.addEventListener('disconnect', e => {
-        if (!e.detail.clean) {
-          loading.innerHTML =
-            '<div class="spin"></div>' +
-            '<div>Reconnecting...</div>';
-          setTimeout(connect, 3000);
-        }
-      });
-
-      rfb.addEventListener('credentialsrequired', () => rfb.sendCredentials({ password: '' }));
-    }
-
-    connect();
-  </script>
+  <iframe src="/vnc-frame" allowfullscreen></iframe>
 </body>
 </html>"""
+
+@app.route("/vnc-frame")
+@require_user
+def vnc_frame():
+    """Proxy noVNC page from websockify with correct WebSocket URL injected."""
+    import urllib.request, urllib.error
+    try:
+        # Fetch noVNC page from local websockify
+        with urllib.request.urlopen("http://localhost:6080/vnc.html", timeout=3) as r:
+            html = r.read().decode("utf-8", errors="replace")
+    except Exception:
+        # Fallback: serve from filesystem
+        try:
+            with open("/usr/share/novnc/vnc.html") as f:
+                html = f.read()
+        except Exception as e:
+            return f"noVNC not available: {e}", 500
+
+    # Inject auto-connect script
+    inject = """<script>
+window.addEventListener('load', function() {
+  setTimeout(function() {
+    try {
+      var host = window.location.hostname;
+      var port = window.location.port || (location.protocol==='https:'?'443':'80');
+      if (typeof UI !== 'undefined') {
+        UI.initSetting('host', host);
+        UI.initSetting('port', port);
+        UI.initSetting('path', 'websockify');
+        UI.initSetting('encrypt', location.protocol === 'https:');
+        UI.initSetting('resize', 'scale');
+        UI.initSetting('reconnect', true);
+        UI.connect();
+      }
+    } catch(e) { console.log('noVNC connect error:', e); }
+  }, 800);
+});
+</script></body>"""
+    html = html.replace("</body>", inject).replace("</BODY>", inject)
+    return html, 200, {"Content-Type": "text/html; charset=utf-8",
+                       "Cache-Control": "no-cache"}
+
+@app.route("/novnc/core/<path:filename>")
+@app.route("/core/<path:filename>")
+def novnc_core(filename):
+    """Serve noVNC core JS files."""
+    import os
+    for base in ["/usr/share/novnc/core", "/usr/share/novnc"]:
+        fp = os.path.join(base, filename)
+        if os.path.isfile(fp):
+            from flask import send_file
+            return send_file(fp)
+    # Try proxying from websockify
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://localhost:6080/core/{filename}", timeout=3) as r:
+            return r.read(), 200, {"Content-Type": r.headers.get("Content-Type","text/javascript")}
+    except Exception:
+        return "Not found", 404
 
 @app.route("/setup-db")
 def setup_db():

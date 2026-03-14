@@ -26,16 +26,21 @@ vnc = subprocess.Popen([
 procs.append(vnc)
 time.sleep(1)
 
-print(f"Starting gunicorn on :{port} ...", flush=True)
-# gthread worker supports WebSockets via flask-sock
+print("Starting websockify :6080 -> :5900 ...", flush=True)
+ws = subprocess.Popen([
+    "websockify", "--heartbeat", "30",
+    "6080", "localhost:5900"
+])
+procs.append(ws)
+time.sleep(1)
+
+print(f"Starting gunicorn on :{port} (gevent) ...", flush=True)
 gunicorn = subprocess.Popen([
     "gunicorn", "app:app",
     "--bind", f"0.0.0.0:{port}",
     "--workers", "1",
-    "--worker-class", "gthread",
-    "--threads", "8",
+    "--worker-class", "geventwebsocket.gunicorn.workers.GeventWebSocketWorker",
     "--timeout", "300",
-    "--keep-alive", "30",
 ])
 procs.append(gunicorn)
 gunicorn.wait()
