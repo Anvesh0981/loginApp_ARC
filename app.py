@@ -596,8 +596,39 @@ def debug_vnc():
 
 if _has_sock:
     @sock.route("/websockify")
-    @sock.route("/vnc-proxy/websockify")
     def _vnc_ws_handler(ws):
+        import socket
+        try:
+            backend = socket.create_connection(("localhost", 5900), timeout=3)
+        except Exception as e:
+            print(f"[VNC] VNC connection failed: {e}", flush=True)
+            return
+        def vnc_to_ws():
+            try:
+                while True:
+                    d = backend.recv(65536)
+                    if not d: break
+                    ws.send(d)
+            except Exception: pass
+            finally:
+                try: backend.close()
+                except: pass
+        t = threading.Thread(target=vnc_to_ws, daemon=True)
+        t.start()
+        try:
+            while True:
+                d = ws.receive()
+                if d is None: break
+                if isinstance(d, str): d = d.encode()
+                backend.sendall(d)
+        except Exception: pass
+        finally:
+            try: backend.close()
+            except: pass
+            t.join(timeout=1)
+
+    @sock.route("/vnc-proxy/websockify")
+    def _vnc_proxy_ws_handler(ws):
         import socket
         try:
             backend = socket.create_connection(("localhost", 5900), timeout=3)
@@ -633,8 +664,39 @@ if _has_sock:
 
 if _has_sock:
     @sock.route("/websockify")
-    @sock.route("/vnc-proxy/websockify")
     def _vnc_ws_handler(ws):
+        import socket
+        try:
+            backend = socket.create_connection(("localhost", 5900), timeout=3)
+        except Exception as e:
+            print(f"[VNC] VNC connection failed: {e}", flush=True)
+            return
+        def vnc_to_ws():
+            try:
+                while True:
+                    d = backend.recv(65536)
+                    if not d: break
+                    ws.send(d)
+            except Exception: pass
+            finally:
+                try: backend.close()
+                except: pass
+        t = threading.Thread(target=vnc_to_ws, daemon=True)
+        t.start()
+        try:
+            while True:
+                d = ws.receive()
+                if d is None: break
+                if isinstance(d, str): d = d.encode()
+                backend.sendall(d)
+        except Exception: pass
+        finally:
+            try: backend.close()
+            except: pass
+            t.join(timeout=1)
+
+    @sock.route("/vnc-proxy/websockify")
+    def _vnc_proxy_ws_handler(ws):
         import socket
         try:
             backend = socket.create_connection(("localhost", 5900), timeout=3)
