@@ -506,10 +506,41 @@ async function doRun(){
 
   evtSource.addEventListener('status', e => {
     const d = JSON.parse(e.data);
-    status.style.color = d.done ? 'var(--green)' : 'var(--accent)';
-    status.textContent = d.msg;
-    if (d.waiting_captcha) btn.textContent = 'Waiting for you to solve captcha…';
-    if (d.done) { btn.textContent = 'Run — Open & Auto-Fill Everything'; btn.disabled = false; evtSource.close(); }
+    status.style.color = d.take_control ? 'var(--green)' : d.done ? 'var(--green)' : 'var(--accent)';
+
+    if (d.waiting_captcha) {
+      // Show link to open browser for captcha
+      status.innerHTML = d.msg +
+        ' <a href="/vnc" target="_blank" ' +
+        'style="color:var(--accent);font-weight:700;background:rgba(200,240,74,0.1);' +
+        'border:1px solid rgba(200,240,74,0.3);padding:3px 10px;border-radius:6px;' +
+        'text-decoration:none;margin-left:6px;font-size:0.8rem">' +
+        '🖥 Open Browser →</a>';
+      btn.textContent = '⏳ Waiting for captcha…';
+
+    } else if (d.take_control) {
+      // Automation done — invite user to take over
+      status.innerHTML =
+        '<div style="margin-bottom:8px;color:var(--green);font-weight:600">' + d.msg + '</div>' +
+        '<a href="/vnc" target="_blank" ' +
+        'style="display:inline-block;padding:10px 20px;background:var(--accent);color:#0c0e15;' +
+        'font-weight:800;border-radius:8px;text-decoration:none;font-family:var(--serif);font-size:0.9rem">' +
+        '🖥 Take Control of Browser →</a>' +
+        '<div style="font-size:0.7rem;color:var(--muted);margin-top:6px">' +
+        'Browser stays open 30 min. Click Continue, navigate, do your work.</div>';
+      btn.textContent = 'Run Again';
+      btn.disabled = false;
+      evtSource.close();
+
+    } else {
+      status.textContent = d.msg;
+    }
+
+    if (d.done) {
+      btn.textContent = 'Run — Open & Auto-Fill Everything';
+      btn.disabled = false;
+      evtSource.close();
+    }
   });
 
   evtSource.addEventListener('error', e => {

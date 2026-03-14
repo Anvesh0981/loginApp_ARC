@@ -158,6 +158,41 @@ def require_admin(f):
 def healthz():
     return "ok", 200
 
+@app.route("/vnc")
+@require_user
+def vnc_viewer():
+    """Serve noVNC viewer so user can see and interact with the Playwright browser."""
+    return """<!DOCTYPE html>
+<html>
+<head>
+<title>Vault Browser</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0c0e15; color:#dde3f0; font-family:system-ui,sans-serif; }
+  .bar { background:#13161f; border-bottom:1px solid #1e2535; padding:10px 20px;
+         display:flex; align-items:center; gap:12px; }
+  .logo { color:#c8f04a; font-weight:800; font-size:0.9rem; }
+  .info { color:#5a6480; font-size:0.8rem; }
+  iframe { width:100%; height:calc(100vh - 45px); border:none; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <span class="logo">🔐 Vault Browser</span>
+    <span class="info">🖱 You have full control — solve captcha, click Sign In, then continue from here</span>
+    <a href="/dashboard" style="margin-left:auto;color:#5b9cf6;font-size:0.8rem;text-decoration:none">
+      ← Back to Dashboard
+    </a>
+  </div>
+  <iframe id="vnc-frame" allowfullscreen></iframe>
+  <script>
+    // Use same hostname, port 6080 for noVNC
+    document.getElementById('vnc-frame').src = 
+      'http://' + window.location.hostname + ':6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true';
+  </script>
+</body>
+</html>"""
+
 @app.route("/setup-db")
 def setup_db():
     secret = request.args.get("key", "")
@@ -556,11 +591,11 @@ def run_login(lid):
                 q.put(("status", {"msg": "🚀 Launching browser…", "step": 1}))
 
                 browser = pw.chromium.launch(
-                    headless=True,
+                    headless=False,          # headed — visible on virtual display
                     executable_path=chromium_path,
                     args=["--no-sandbox", "--disable-setuid-sandbox",
-                          "--disable-dev-shm-usage", "--disable-gpu",
-                          "--single-process", "--no-zygote"]
+                          "--disable-dev-shm-usage",
+                          "--display=:99"]   # use Xvfb virtual display
                 )
                 context = browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -691,11 +726,14 @@ def run_login(lid):
                             except Exception: pass
 
                 q.put(("status", {
-                    "msg": f"✓ {filled} answer{'s' if filled>1 else ''} filled — click Continue",
-                    "step": 7, "done": True
+                    "msg": f"✓ {filled} answer{'s' if filled>1 else ''} filled — click Continue in the browser",
+                    "step": 7,
+                    "done": False,
+                    "take_control": True
                 }))
 
-                time.sleep(300)
+                # Keep browser alive for 30 minutes so user can take over
+                time.sleep(1800)
                 browser.close()
 
         except Exception as e:
