@@ -5,9 +5,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-# Playwright browsers already included in base image
-RUN playwright install chromium
-
 COPY . .
 
 EXPOSE 8080
