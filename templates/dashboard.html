@@ -506,13 +506,10 @@ function closeRun(){
 function doRun(){
   const id = _runData.id;
   if (!id) return;
-  // Redirect to run endpoint — opens browser and redirects to VNC viewer
-  window.open('/api/run/' + id, '_blank');
-  document.getElementById('run-status').style.color = 'var(--green)';
-  document.getElementById('run-status').textContent = 'Browser opening in new tab...';
-  setTimeout(() => {
-    document.getElementById('run-status').textContent = '';
-  }, 4000);
+  // Navigate in same tab so session cookie is sent
+  document.getElementById('run-status').style.color = 'var(--accent)';
+  document.getElementById('run-status').textContent = 'Launching browser...';
+  window.location.href = '/api/run/' + id;
 }
 
 
