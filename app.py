@@ -545,26 +545,27 @@ def run_login(lid):
         yield send("status", {"msg": "🚀 Starting browser…", "step": 1})
 
         try:
-            from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+            from playwright.sync_api import sync_playwright
         except ImportError:
-            yield send("error", {"msg": "Playwright not installed. Run: playwright install chromium"})
+            yield send("error", {"msg": "Playwright package not found. Check requirements.txt."})
             return
 
         try:
             with sync_playwright() as pw:
-                # Find Chromium — try system path first (apt install), then Playwright default
-                import shutil
+                import shutil, os
+                # Use system chromium installed via apt in Dockerfile
                 chromium_path = (
+                    os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or
                     shutil.which("chromium") or
                     shutil.which("chromium-browser") or
                     "/usr/bin/chromium"
                 )
                 browser = pw.chromium.launch(
                     headless=True,
-                    executable_path=chromium_path if shutil.which(chromium_path or "") else None,
+                    executable_path=chromium_path,
                     args=["--no-sandbox", "--disable-setuid-sandbox",
                           "--disable-dev-shm-usage", "--disable-gpu",
-                          "--disable-software-rasterizer"]
+                          "--single-process", "--no-zygote"]
                 )
                 context = browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
