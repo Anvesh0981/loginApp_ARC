@@ -14,6 +14,14 @@ from psycopg2.extras import RealDictCursor
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 
+# WebSocket support for VNC proxy
+try:
+    from flask_sock import Sock
+    sock = Sock(app)
+    _has_sock = True
+except ImportError:
+    _has_sock = False
+
 # ── Config ────────────────────────────────────────────────────────────────────
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin1234")
 TARGET_URL     = os.environ.get("TARGET_URL", "https://abc-app.example.com/login")
@@ -122,7 +130,9 @@ def hash_key(raw_key):
     return hashlib.sha256(raw_key.encode()).hexdigest()
 
 # ── Ensure tables exist on first request (works under gunicorn, no shell needed)
-_db_initialized = False
+_db_initialized    = False  # set True after first init_db() call
+_browser_sessions  = {}    # key_id -> threading.Event
+captcha_store      = {}    # lid -> {"value": str, "event": threading.Event}
 
 @app.before_request
 def ensure_tables():
@@ -158,59 +168,151 @@ def require_admin(f):
 def healthz():
     return "ok", 200
 
+@app.route("/novnc")
+@app.route("/novnc/<path:filename>")
+def novnc_static(filename="vnc.html"):
+    """Serve noVNC static files — no auth needed for JS/CSS assets."""
+    novnc_path = "/usr/share/novnc"
+    import os
+    filepath = os.path.join(novnc_path, filename)
+    if os.path.isfile(filepath):
+        from flask import send_file
+        return send_file(filepath)
+    # Also check core subdir
+    filepath2 = os.path.join(novnc_path, "core", filename.replace("core/",""))
+    if os.path.isfile(filepath2):
+        from flask import send_file
+        return send_file(filepath2)
+    return "Not found", 404
+
+# WebSocket proxy: browser <-> Flask <-> local VNC :5900
+# Registered after app init so sock is available
+def _register_websockify():
+    import socket, threading
+
+    @sock.route("/websockify")
+    def websockify(ws):
+        """Proxy noVNC WebSocket to local VNC server on port 5900."""
+        try:
+            vnc = socket.create_connection(("localhost", 5900), timeout=5)
+        except Exception as e:
+            print(f"VNC connection failed: {e}", flush=True)
+            return
+
+        def ws_to_vnc():
+            try:
+                while True:
+                    data = ws.receive()
+                    if data is None: break
+                    if isinstance(data, str): data = data.encode()
+                    vnc.sendall(data)
+            except Exception: pass
+            finally:
+                try: vnc.close()
+                except: pass
+
+        def vnc_to_ws():
+            try:
+                while True:
+                    data = vnc.recv(65536)
+                    if not data: break
+                    ws.send(data)
+            except Exception: pass
+            finally:
+                try: ws.close()
+                except: pass
+
+        t = threading.Thread(target=vnc_to_ws, daemon=True)
+        t.start()
+        ws_to_vnc()
+        t.join()
+
+if _has_sock:
+    _register_websockify()
+
 @app.route("/vnc")
 @require_user
 def vnc_viewer():
-    """Full-screen noVNC browser panel — user sees and controls the Playwright browser."""
-    host = request.host.split(":")[0]
-    vnc_url = f"http://{host}:6080/vnc.html?autoconnect=true&resize=scale&reconnect=true&show_dot=true"
-    return f"""<!DOCTYPE html>
+    """Full-screen noVNC — connects WebSocket through same Railway port."""
+    return """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <title>Vault — Live Browser</title>
 <style>
-  *{{margin:0;padding:0;box-sizing:border-box}}
-  body{{background:#0c0e15;font-family:system-ui,sans-serif;height:100vh;display:flex;flex-direction:column}}
-  .bar{{background:#13161f;border-bottom:1px solid #1e2535;padding:0 20px;height:44px;
-        display:flex;align-items:center;gap:12px;flex-shrink:0}}
-  .logo{{color:#c8f04a;font-weight:800;font-size:0.88rem;letter-spacing:0.04em}}
-  .steps{{display:flex;gap:6px;margin-left:8px}}
-  .step{{font-size:0.72rem;padding:3px 10px;border-radius:99px;border:1px solid #1e2535;color:#5a6480}}
-  .step.active{{border-color:rgba(200,240,74,0.4);color:#c8f04a;background:rgba(200,240,74,0.08)}}
-  .back{{margin-left:auto;color:#5b9cf6;font-size:0.78rem;text-decoration:none;padding:4px 12px;
-         border:1px solid rgba(91,156,246,0.3);border-radius:6px}}
-  .back:hover{{background:rgba(91,156,246,0.1)}}
-  iframe{{flex:1;border:none;width:100%}}
-  .loading{{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:#5a6480}}
-  .spinner{{width:32px;height:32px;border:3px solid #1e2535;border-top-color:#c8f04a;
-            border-radius:50%;animation:spin 0.8s linear infinite}}
-  @keyframes spin{{to{{transform:rotate(360deg)}}}}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0c0e15;font-family:system-ui,sans-serif;height:100vh;display:flex;flex-direction:column}
+  .bar{background:#13161f;border-bottom:1px solid #1e2535;padding:0 20px;height:44px;
+       display:flex;align-items:center;gap:12px;flex-shrink:0}
+  .logo{color:#c8f04a;font-weight:800;font-size:0.88rem}
+  .steps{display:flex;gap:6px;margin-left:8px}
+  .step{font-size:0.7rem;padding:3px 10px;border-radius:99px;border:1px solid #1e2535;color:#5a6480}
+  .step.done{border-color:rgba(61,255,160,0.3);color:#3dffa0;background:rgba(61,255,160,0.06)}
+  .back{margin-left:auto;color:#5b9cf6;font-size:0.78rem;text-decoration:none;
+        padding:4px 12px;border:1px solid rgba(91,156,246,0.3);border-radius:6px}
+  #screen{flex:1;width:100%;border:none}
+  .loading{flex:1;display:flex;align-items:center;justify-content:center;
+           flex-direction:column;gap:14px;color:#5a6480;font-size:0.85rem}
+  .spin{width:28px;height:28px;border:3px solid #1e2535;border-top-color:#c8f04a;
+        border-radius:50%;animation:s 0.8s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
   <div class="bar">
-    <span class="logo">🔐 Vault Browser</span>
+    <span class="logo">🔐 Vault Live Browser</span>
     <div class="steps">
-      <span class="step active">1. Solve captcha</span>
-      <span class="step">2. Click Sign In</span>
-      <span class="step">3. Answers auto-filled</span>
-      <span class="step">4. Click Continue</span>
+      <span class="step">1 Solve captcha</span>
+      <span class="step">2 Click Sign In</span>
+      <span class="step">3 Answers auto-filled</span>
+      <span class="step">4 Click Continue</span>
     </div>
     <a href="/dashboard" class="back">← Dashboard</a>
   </div>
   <div class="loading" id="loading">
-    <div class="spinner"></div>
-    <div>Connecting to browser...</div>
-    <div style="font-size:0.72rem">If this takes more than 10s, refresh the page</div>
+    <div class="spin"></div>
+    <div>Connecting to browser on server...</div>
+    <div style="font-size:0.72rem;margin-top:4px">Takes a few seconds to start</div>
   </div>
-  <iframe id="vnc" style="display:none" allowfullscreen></iframe>
-  <script>
-    const frame = document.getElementById('vnc');
+  <canvas id="screen" style="display:none"></canvas>
+
+  <!-- Load noVNC core directly -->
+  <script type="module">
+    import RFB from '/novnc/core/rfb.js';
+
     const loading = document.getElementById('loading');
-    frame.onload = () => {{ loading.style.display='none'; frame.style.display='block'; }};
-    frame.src = '{vnc_url}';
-    setTimeout(() => {{ loading.style.display='none'; frame.style.display='block'; }}, 4000);
+    const canvas  = document.getElementById('screen');
+
+    // WebSocket URL — same host/port as Flask, path /websockify
+    const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') +
+                  location.host + '/websockify';
+
+    function connect() {
+      loading.style.display = 'flex';
+      canvas.style.display  = 'none';
+
+      const rfb = new RFB(canvas, wsUrl, { wsProtocols: ['binary'] });
+
+      rfb.addEventListener('connect', () => {
+        loading.style.display = 'none';
+        canvas.style.display  = 'block';
+        rfb.scaleViewport = true;
+        rfb.resizeSession = false;
+      });
+
+      rfb.addEventListener('disconnect', e => {
+        if (!e.detail.clean) {
+          loading.innerHTML =
+            '<div class="spin"></div>' +
+            '<div>Reconnecting...</div>';
+          setTimeout(connect, 3000);
+        }
+      });
+
+      rfb.addEventListener('credentialsrequired', () => rfb.sendCredentials({ password: '' }));
+    }
+
+    connect();
   </script>
 </body>
 </html>"""
