@@ -507,6 +507,17 @@ def admin_logs():
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  PLAYWRIGHT RUN
+
+@app.route("/api/run/captcha/<int:lid>", methods=["POST"])
+@require_user
+def submit_captcha(lid):
+    """Receives captcha text from dashboard and unblocks the Playwright thread."""
+    text = (request.json or {}).get("captcha", "").strip()
+    if lid in captcha_store:
+        captcha_store[lid]["value"] = text
+        captcha_store[lid]["event"].set()
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "No active session for this login"})
 # ══════════════════════════════════════════════════════════════════════════════
 @app.route("/api/run/<int:lid>", methods=["POST"])
 @require_user
@@ -541,10 +552,19 @@ def run_login(lid):
 
         try:
             with sync_playwright() as pw:
+                # Find Chromium — try system path first (apt install), then Playwright default
+                import shutil
+                chromium_path = (
+                    shutil.which("chromium") or
+                    shutil.which("chromium-browser") or
+                    "/usr/bin/chromium"
+                )
                 browser = pw.chromium.launch(
                     headless=True,
+                    executable_path=chromium_path if shutil.which(chromium_path or "") else None,
                     args=["--no-sandbox", "--disable-setuid-sandbox",
-                          "--disable-dev-shm-usage", "--disable-gpu"]
+                          "--disable-dev-shm-usage", "--disable-gpu",
+                          "--disable-software-rasterizer"]
                 )
                 context = browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -613,18 +633,90 @@ def run_login(lid):
 
                 u_status = "✓ Username" if username_filled else "✗ Username"
                 p_status = "✓ Password" if password_filled else "✗ Password"
+
+                # Take a screenshot so user can see the captcha
+                import base64
+                screenshot_b64 = base64.b64encode(page.screenshot()).decode()
+
+                yield send("screenshot", {
+                    "img": screenshot_b64,
+                    "msg": f"{u_status}  {p_status} filled",
+                    "step": 4,
+                    "need_captcha": True
+                })
+
+                # Wait for captcha answer from client (posted to /api/run/captcha/<lid>)
+                # Store a threading Event so the captcha endpoint can signal us
+                import threading
+                evt = threading.Event()
+                captcha_store[lid] = {"event": evt, "value": None}
+
                 yield send("status", {
-                    "msg": f"{u_status}  {p_status} filled — waiting for you to solve captcha & sign in…",
+                    "msg": "👆 Type the captcha text below and click Submit",
                     "step": 4,
                     "waiting_captcha": True
                 })
 
+                # Wait up to 3 minutes for captcha input
+                evt.wait(timeout=180)
+                captcha_text = captcha_store.pop(lid, {}).get("value", "")
+
+                if not captcha_text:
+                    yield send("error", {"msg": "Captcha not submitted within 3 minutes."})
+                    browser.close()
+                    return
+
+                # Fill captcha field and click Sign In
+                yield send("status", {"msg": "⌨️ Entering captcha & clicking Sign In…", "step": 5})
+                captcha_filled = False
+                for sel in [
+                    'input[id*="captcha" i]', 'input[name*="captcha" i]',
+                    'input[placeholder*="captcha" i]', 'input[placeholder*="text" i]',
+                    'input[id*="cap" i]'
+                ]:
+                    try:
+                        el = page.locator(sel).first
+                        if el.is_visible(timeout=500):
+                            el.fill(captcha_text)
+                            captcha_filled = True
+                            break
+                    except Exception:
+                        continue
+
+                # If no captcha field found, try last visible text input
+                if not captcha_filled:
+                    try:
+                        inputs = page.locator(
+                            'input:not([type="password"]):not([type="hidden"])'
+                            ':not([type="submit"]):not([type="button"])'
+                            ':not([type="checkbox"]):not([type="radio"])'
+                        ).all()
+                        visible = [i for i in inputs if i.is_visible(timeout=200)]
+                        if visible:
+                            visible[-1].fill(captcha_text)
+                            captcha_filled = True
+                    except Exception:
+                        pass
+
+                # Click Sign In button
+                for sel in [
+                    'button[type="submit"]', 'input[type="submit"]',
+                    'button:has-text("Sign In")', 'button:has-text("Login")',
+                    'button:has-text("Log In")', 'button:has-text("Submit")'
+                ]:
+                    try:
+                        btn = page.locator(sel).first
+                        if btn.is_visible(timeout=500):
+                            btn.click()
+                            break
+                    except Exception:
+                        continue
+
                 # ── Wait for navigation to security questions page ─────────
-                # Poll until URL changes or "security question" appears — up to 3 min
-                yield send("status", {"msg": "⏳ Waiting for security questions page…", "step": 5})
+                yield send("status", {"msg": "⏳ Waiting for security questions page…", "step": 6})
 
                 security_page_found = False
-                for _ in range(180):  # 180 x 1s = 3 minutes
+                for _ in range(180):
                     try:
                         body_text = page.inner_text("body").lower()
                         if "security question" in body_text or "secret question" in body_text:
@@ -635,7 +727,10 @@ def run_login(lid):
                     time.sleep(1)
 
                 if not security_page_found:
-                    yield send("error", {"msg": "Security questions page not detected within 3 minutes."})
+                    # Take screenshot to show what happened
+                    screenshot_b64 = base64.b64encode(page.screenshot()).decode()
+                    yield send("screenshot", {"img": screenshot_b64, "msg": "Page after Sign In"})
+                    yield send("error", {"msg": "Security questions page not detected. Check screenshot above."})
                     browser.close()
                     return
 
