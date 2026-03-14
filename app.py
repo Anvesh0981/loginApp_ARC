@@ -522,12 +522,6 @@ def submit_captcha(lid):
 @app.route("/api/run/<int:lid>", methods=["GET", "POST"])
 @require_user
 def run_login(lid):
-    """
-    Launches a headless Playwright browser, fills username+password on page 1,
-    then fills security question answers on page 2.
-    Streams status updates as Server-Sent Events so the dashboard shows live progress.
-    """
-    # Fetch the login record
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT * FROM logins WHERE id=%s AND key_id=%s", (lid, session["key_id"]))
@@ -538,28 +532,29 @@ def run_login(lid):
 
     login = dict(row)
 
-    def generate():
-        def send(event, data):
-            return "event: " + event + "\ndata: " + json.dumps(data) + "\n\n"
+    import queue, threading
 
-        yield send("status", {"msg": "🚀 Starting browser…", "step": 1})
+    q = queue.Queue()
 
+    def run_playwright():
         try:
             from playwright.sync_api import sync_playwright
-        except ImportError:
-            yield send("error", {"msg": "Playwright package not found. Check requirements.txt."})
+        except Exception as e:
+            q.put(("error", {"msg": "Import error: " + str(e)}))
+            q.put(None)
             return
 
         try:
             with sync_playwright() as pw:
                 import shutil, os
-                # Use system chromium installed via apt in Dockerfile
                 chromium_path = (
                     os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or
                     shutil.which("chromium") or
                     shutil.which("chromium-browser") or
                     "/usr/bin/chromium"
                 )
+                q.put(("status", {"msg": "🚀 Launching browser…", "step": 1}))
+
                 browser = pw.chromium.launch(
                     headless=True,
                     executable_path=chromium_path,
@@ -574,171 +569,70 @@ def run_login(lid):
                 )
                 page = context.new_page()
 
-                # ── Page 1: Login ──────────────────────────────────────────
-                yield send("status", {"msg": "🌐 Opening login page…", "step": 2})
+                q.put(("status", {"msg": "🌐 Opening login page…", "step": 2}))
                 page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_timeout(1500)
 
-                yield send("status", {"msg": "✏️ Filling username & password…", "step": 3})
+                q.put(("status", {"msg": "✏️ Filling username & password…", "step": 3}))
 
-                # Fill username — find first text/email input
+                # Fill username — first visible text input before password
                 username_filled = False
-                for selector in [
-                    'input[type="email"]',
-                    'input[autocomplete="username"]',
-                    'input[name="username"]',
-                    'input[name="email"]',
-                    'input[name="userId"]',
-                    'input[id*="user" i]',
-                    'input[id*="email" i]',
-                    'input[placeholder*="user" i]',
-                    'input[placeholder*="email" i]',
-                ]:
-                    try:
-                        el = page.locator(selector).first
-                        if el.is_visible(timeout=500):
-                            el.fill(login["username"])
-                            username_filled = True
-                            break
-                    except Exception:
-                        continue
-
-                # Fallback: first visible text input before password
-                if not username_filled:
-                    try:
-                        inputs = page.locator(
-                            'input:not([type="password"]):not([type="hidden"])'
-                            ':not([type="submit"]):not([type="button"])'
-                            ':not([type="checkbox"]):not([type="radio"])'
-                        ).all()
-                        for inp in inputs:
-                            try:
-                                if inp.is_visible(timeout=300):
-                                    inp.fill(login["username"])
-                                    username_filled = True
-                                    break
-                            except Exception:
-                                continue
-                    except Exception:
-                        pass
+                try:
+                    all_inputs = page.locator(
+                        'input:not([type="password"]):not([type="hidden"])'
+                        ':not([type="submit"]):not([type="button"])'
+                        ':not([type="checkbox"]):not([type="radio"])'
+                    ).all()
+                    for inp in all_inputs:
+                        try:
+                            if inp.is_visible(timeout=300):
+                                inp.fill(login["username"])
+                                username_filled = True
+                                break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
 
                 # Fill password
                 password_filled = False
                 try:
-                    pwd_el = page.locator('input[type="password"]').first
-                    if pwd_el.is_visible(timeout=2000):
-                        pwd_el.fill(login["password"])
+                    pwd = page.locator('input[type="password"]').first
+                    if pwd.is_visible(timeout=2000):
+                        pwd.fill(login["password"])
                         password_filled = True
                 except Exception:
                     pass
 
-                u_status = "✓ Username" if username_filled else "✗ Username"
-                p_status = "✓ Password" if password_filled else "✗ Password"
+                u = "✓ Username" if username_filled else "✗ Username"
+                p = "✓ Password" if password_filled else "✗ Password"
+                q.put(("status", {
+                    "msg": f"{u}  {p} — solve captcha then click Sign In",
+                    "step": 4, "waiting_captcha": True
+                }))
 
-                # Take a screenshot so user can see the captcha
-                import base64
-                screenshot_b64 = base64.b64encode(page.screenshot()).decode()
-
-                yield send("screenshot", {
-                    "img": screenshot_b64,
-                    "msg": f"{u_status}  {p_status} filled",
-                    "step": 4,
-                    "need_captcha": True
-                })
-
-                # Wait for captcha answer from client (posted to /api/run/captcha/<lid>)
-                # Store a threading Event so the captcha endpoint can signal us
-                import threading
-                evt = threading.Event()
-                captcha_store[lid] = {"event": evt, "value": None}
-
-                yield send("status", {
-                    "msg": "👆 Type the captcha text below and click Submit",
-                    "step": 4,
-                    "waiting_captcha": True
-                })
-
-                # Wait up to 3 minutes for captcha input
-                evt.wait(timeout=180)
-                captcha_text = captcha_store.pop(lid, {}).get("value", "")
-
-                if not captcha_text:
-                    yield send("error", {"msg": "Captcha not submitted within 3 minutes."})
-                    browser.close()
-                    return
-
-                # Fill captcha field and click Sign In
-                yield send("status", {"msg": "⌨️ Entering captcha & clicking Sign In…", "step": 5})
-                captcha_filled = False
-                for sel in [
-                    'input[id*="captcha" i]', 'input[name*="captcha" i]',
-                    'input[placeholder*="captcha" i]', 'input[placeholder*="text" i]',
-                    'input[id*="cap" i]'
-                ]:
-                    try:
-                        el = page.locator(sel).first
-                        if el.is_visible(timeout=500):
-                            el.fill(captcha_text)
-                            captcha_filled = True
-                            break
-                    except Exception:
-                        continue
-
-                # If no captcha field found, try last visible text input
-                if not captcha_filled:
-                    try:
-                        inputs = page.locator(
-                            'input:not([type="password"]):not([type="hidden"])'
-                            ':not([type="submit"]):not([type="button"])'
-                            ':not([type="checkbox"]):not([type="radio"])'
-                        ).all()
-                        visible = [i for i in inputs if i.is_visible(timeout=200)]
-                        if visible:
-                            visible[-1].fill(captcha_text)
-                            captcha_filled = True
-                    except Exception:
-                        pass
-
-                # Click Sign In button
-                for sel in [
-                    'button[type="submit"]', 'input[type="submit"]',
-                    'button:has-text("Sign In")', 'button:has-text("Login")',
-                    'button:has-text("Log In")', 'button:has-text("Submit")'
-                ]:
-                    try:
-                        btn = page.locator(sel).first
-                        if btn.is_visible(timeout=500):
-                            btn.click()
-                            break
-                    except Exception:
-                        continue
-
-                # ── Wait for navigation to security questions page ─────────
-                yield send("status", {"msg": "⏳ Waiting for security questions page…", "step": 6})
-
-                security_page_found = False
+                # Wait for security questions page (up to 3 min)
+                q.put(("status", {"msg": "⏳ Waiting for security questions page…", "step": 5}))
+                security_found = False
                 for _ in range(180):
                     try:
-                        body_text = page.inner_text("body").lower()
-                        if "security question" in body_text or "secret question" in body_text:
-                            security_page_found = True
+                        txt = page.inner_text("body").lower()
+                        if "security question" in txt or "secret question" in txt:
+                            security_found = True
                             break
                     except Exception:
                         pass
                     time.sleep(1)
 
-                if not security_page_found:
-                    # Take screenshot to show what happened
-                    screenshot_b64 = base64.b64encode(page.screenshot()).decode()
-                    yield send("screenshot", {"img": screenshot_b64, "msg": "Page after Sign In"})
-                    yield send("error", {"msg": "Security questions page not detected. Check screenshot above."})
+                if not security_found:
+                    q.put(("error", {"msg": "Security questions page not detected within 3 minutes."}))
                     browser.close()
+                    q.put(None)
                     return
 
-                yield send("status", {"msg": "🛡 Security questions page detected! Filling answers…", "step": 6})
+                q.put(("status", {"msg": "🛡 Filling security answers…", "step": 6}))
                 page.wait_for_timeout(800)
 
-                # ── Page 2: Security questions ─────────────────────────────
                 answers = [
                     {"q": (login.get("sel_q1") or "").lower(), "a": login.get("ans_q1") or ""},
                     {"q": (login.get("sel_q2") or "").lower(), "a": login.get("ans_q2") or ""},
@@ -746,97 +640,86 @@ def run_login(lid):
                 ]
                 answers = [x for x in answers if x["a"].strip()]
 
-                # Get all visible text inputs excluding username
-                all_inputs = page.locator(
+                # Get answer boxes — visible text inputs excluding username
+                all_inp = page.locator(
                     'input:not([type="password"]):not([type="hidden"])'
                     ':not([type="submit"]):not([type="button"])'
                     ':not([type="checkbox"]):not([type="radio"])'
                 ).all()
-
-                answer_boxes = []
-                for inp in all_inputs:
+                boxes = []
+                for inp in all_inp:
                     try:
                         if inp.is_visible(timeout=300):
                             val = inp.input_value()
                             if val.strip() != login["username"].strip():
-                                answer_boxes.append(inp)
+                                boxes.append(inp)
                     except Exception:
                         continue
 
                 filled = 0
+                used = set()
 
-                # Match by question text near each input
-                used_answers = set()
-                for i, box in enumerate(answer_boxes):
-                    best_ans = None
-                    best_score = 0
-                    # Get bounding box and find nearby text
+                # Match by question text
+                for i, box in enumerate(boxes):
+                    best, best_score = None, 0
                     try:
-                        # Use evaluate to get surrounding text
-                        nearby = page.evaluate("""(el) => {
-                            let text = '';
-                            let node = el.parentElement;
-                            for (let i = 0; i < 4 && node; i++) {
-                                text += ' ' + (node.innerText || '');
-                                node = node.parentElement;
-                            }
-                            return text.toLowerCase();
-                        }""", box.element_handle())
+                        nearby = page.evaluate(
+                            "(el) => { let t=''; let n=el.parentElement; "
+                            "for(let i=0;i<4&&n;i++){t+=' '+(n.innerText||'');n=n.parentElement;} "
+                            "return t.toLowerCase(); }",
+                            box.element_handle()
+                        )
                     except Exception:
                         nearby = ""
-
                     for j, ans in enumerate(answers):
-                        if j in used_answers or not ans["q"]:
-                            continue
-                        q_words = [w for w in ans["q"].split() if len(w) > 3]
-                        if not q_words:
-                            continue
-                        score = sum(1 for w in q_words if w in nearby) / len(q_words)
+                        if j in used or not ans["q"]: continue
+                        words = [w for w in ans["q"].split() if len(w) > 3]
+                        score = sum(1 for w in words if w in nearby) / (len(words) or 1)
                         if score > best_score and score >= 0.25:
                             best_score = score
-                            best_ans = (j, ans)
-
-                    if best_ans:
-                        try:
-                            box.fill(best_ans[1]["a"])
-                            used_answers.add(best_ans[0])
-                            filled += 1
-                        except Exception:
-                            pass
+                            best = (j, ans)
+                    if best:
+                        try: box.fill(best[1]["a"]); used.add(best[0]); filled += 1
+                        except Exception: pass
 
                 # Positional fallback
                 if filled == 0:
-                    for i, box in enumerate(answer_boxes[:len(answers)]):
-                        ans = next((a for j,a in enumerate(answers) if j not in used_answers), None)
+                    for i, box in enumerate(boxes[:len(answers)]):
+                        ans = next((a for j,a in enumerate(answers) if j not in used), None)
                         if ans:
-                            try:
-                                box.fill(ans["a"])
-                                used_answers.add(i)
-                                filled += 1
-                            except Exception:
-                                pass
+                            try: box.fill(ans["a"]); used.add(i); filled += 1
+                            except Exception: pass
 
-                yield send("status", {
-                    "msg": f"✓ {filled} answer{'s' if filled>1 else ''} filled — click Continue when ready",
-                    "step": 7,
-                    "done": True
-                })
+                q.put(("status", {
+                    "msg": f"✓ {filled} answer{'s' if filled>1 else ''} filled — click Continue",
+                    "step": 7, "done": True
+                }))
 
-                # Keep browser open for 5 minutes so user can click Continue
                 time.sleep(300)
                 browser.close()
 
         except Exception as e:
-            yield send("error", {"msg": f"Error: {str(e)}"})
+            q.put(("error", {"msg": "Error: " + str(e)}))
+
+        q.put(None)
+
+    t = threading.Thread(target=run_playwright, daemon=True)
+    t.start()
+
+    def generate():
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            event, data = item
+            yield "event: " + event + "\ndata: " + json.dumps(data) + "\n\n"
 
     return app.response_class(
         stream_with_context(generate()),
         mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no"
-        }
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
