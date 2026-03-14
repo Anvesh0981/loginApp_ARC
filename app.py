@@ -168,6 +168,34 @@ def require_admin(f):
 def healthz():
     return "ok", 200
 
+@app.route("/debug/vnc")
+def debug_vnc():
+    """Debug — check VNC and noVNC status. Remove after confirming it works."""
+    import os, socket
+    info = {}
+    # Check noVNC files
+    novnc_paths = ["/usr/share/novnc", "/usr/share/novnc/utils/novnc_proxy"]
+    for p in novnc_paths:
+        info[p] = os.path.exists(p)
+    # List novnc dir
+    novnc_dir = "/usr/share/novnc"
+    if os.path.isdir(novnc_dir):
+        info["novnc_files"] = os.listdir(novnc_dir)[:20]
+        core_dir = os.path.join(novnc_dir, "core")
+        if os.path.isdir(core_dir):
+            info["novnc_core"] = os.listdir(core_dir)[:10]
+    # Check VNC port
+    try:
+        s = socket.create_connection(("localhost", 5900), timeout=1)
+        s.close()
+        info["vnc_5900"] = "OPEN"
+    except Exception as e:
+        info["vnc_5900"] = f"CLOSED: {e}"
+    # Check env
+    info["DISPLAY"] = os.environ.get("DISPLAY", "not set")
+    info["PLAYWRIGHT_CHROMIUM"] = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "not set")
+    return jsonify(info)
+
 @app.route("/novnc")
 @app.route("/novnc/<path:filename>")
 def novnc_static(filename="vnc.html"):
@@ -701,13 +729,17 @@ def run_login(lid):
                 shutil.which("chromium") or "/usr/bin/chromium"
             )
 
+            # Must set DISPLAY so Playwright uses the Xvfb virtual screen
+            os.environ["DISPLAY"] = ":99"
+
             with sync_playwright() as pw:
                 browser = pw.chromium.launch(
                     headless=False,
                     executable_path=chromium_path,
                     args=["--no-sandbox", "--disable-setuid-sandbox",
                           "--disable-dev-shm-usage", "--start-maximized",
-                          "--disable-blink-features=AutomationControlled"]
+                          "--disable-blink-features=AutomationControlled",
+                          f"--display=:99"]
                 )
                 context = browser.new_context(
                     viewport={"width": 1280, "height": 900},
@@ -825,7 +857,9 @@ def run_login(lid):
                 browser.close()
 
         except Exception as e:
+            import traceback
             print(f"[Vault] Error: {e}", flush=True)
+            print(traceback.format_exc(), flush=True)
 
     # Kill any existing browser session for this user
     existing = _browser_sessions.pop(session["key_id"], None)
@@ -839,7 +873,7 @@ def run_login(lid):
     t = threading.Thread(target=automate, daemon=True)
     t.start()
 
-    time.sleep(2)
+    time.sleep(3)
     return redirect("/vnc")
 
 
