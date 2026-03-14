@@ -471,7 +471,25 @@ function x(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 let _runPass='',_runUsername='',_runData={};
 const _targetUrl='{{ target_url }}';
 function saveExtId(){}
-function openRun(id){const l=all.find(z=>z.id===id);if(!l)return;_runPass=l.password||'';_runUsername=l.username||'';_runData=l;document.getElementById('run-label').textContent=l.label||'Login';document.getElementById('run-username').textContent=l.username||'';document.getElementById('run-password-disp').textContent='        ';document.getElementById('run-password-disp').classList.add('masked');document.getElementById('run-show-btn').textContent='Show';document.getElementById('run-status').textContent='';const savedId=localStorage.getItem('vault_ext_id')||'';document.getElementById('ext-id-input').value=savedId;const pill=document.getElementById('ext-pill');if(savedId){pill.textContent='Connected';pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';}else{pill.textContent='Not set';pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';setTimeout(()=>document.getElementById('ext-id-input').focus(),300);}const pairs=[[l.sel_q1,l.ans_q1],[l.sel_q2,l.ans_q2],[l.sel_q3,l.ans_q3]].filter(([q,a])=>q||a);const sqList=document.getElementById('run-sq-list');if(pairs.length){sqList.innerHTML=pairs.map(([q,a],i)=>'<div class="run-sq-row"><div class="run-sq-q"><div class="run-sq-q-text">'+x(q||'Q'+(i+1))+'</div><div class="run-sq-a">'+x(a||'')+'</div></div><button class="copy-btn" onclick="cpText('+JSON.stringify(a||'')+',this)">Copy</button></div>').join('');document.getElementById('run-sq-section').style.display='';}else{document.getElementById('run-sq-section').style.display='none';}document.getElementById('run-overlay').classList.add('open');}
+function openRun(id){
+  const l=all.find(z=>z.id===id);if(!l)return;
+  _runPass=l.password||'';_runUsername=l.username||'';_runData=l;
+  document.getElementById('run-label').textContent=l.label||'Login';
+  document.getElementById('run-username').textContent=l.username||'';
+  document.getElementById('run-password-disp').textContent='••••••••';
+  document.getElementById('run-password-disp').classList.add('masked');
+  document.getElementById('run-show-btn').textContent='Show';
+  document.getElementById('run-status').textContent='';
+  const pairs=[[l.sel_q1,l.ans_q1],[l.sel_q2,l.ans_q2],[l.sel_q3,l.ans_q3]].filter(([q,a])=>q||a);
+  const sqList=document.getElementById('run-sq-list');
+  if(pairs.length){
+    sqList.innerHTML=pairs.map(([q,a],i)=>'<div class="run-sq-row"><div class="run-sq-q"><div class="run-sq-q-text">'+x(q||'Q'+(i+1))+'</div><div class="run-sq-a">'+x(a||'')+'</div></div><button class="copy-btn" onclick="cpText('+JSON.stringify(a||'')+',this)">Copy</button></div>').join('');
+    document.getElementById('run-sq-section').style.display='';
+  }else{
+    document.getElementById('run-sq-section').style.display='none';
+  }
+  document.getElementById('run-overlay').classList.add('open');
+}
 function closeRun(){document.getElementById('run-overlay').classList.remove('open');}
 async function doRun(){
   const btn = document.getElementById('run-url-btn');
