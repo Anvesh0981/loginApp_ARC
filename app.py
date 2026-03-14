@@ -161,34 +161,56 @@ def healthz():
 @app.route("/vnc")
 @require_user
 def vnc_viewer():
-    """Serve noVNC viewer so user can see and interact with the Playwright browser."""
-    return """<!DOCTYPE html>
+    """Full-screen noVNC browser panel — user sees and controls the Playwright browser."""
+    host = request.host.split(":")[0]
+    vnc_url = f"http://{host}:6080/vnc.html?autoconnect=true&resize=scale&reconnect=true&show_dot=true"
+    return f"""<!DOCTYPE html>
 <html>
 <head>
-<title>Vault Browser</title>
+<meta charset="UTF-8">
+<title>Vault — Live Browser</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#0c0e15; color:#dde3f0; font-family:system-ui,sans-serif; }
-  .bar { background:#13161f; border-bottom:1px solid #1e2535; padding:10px 20px;
-         display:flex; align-items:center; gap:12px; }
-  .logo { color:#c8f04a; font-weight:800; font-size:0.9rem; }
-  .info { color:#5a6480; font-size:0.8rem; }
-  iframe { width:100%; height:calc(100vh - 45px); border:none; }
+  *{{margin:0;padding:0;box-sizing:border-box}}
+  body{{background:#0c0e15;font-family:system-ui,sans-serif;height:100vh;display:flex;flex-direction:column}}
+  .bar{{background:#13161f;border-bottom:1px solid #1e2535;padding:0 20px;height:44px;
+        display:flex;align-items:center;gap:12px;flex-shrink:0}}
+  .logo{{color:#c8f04a;font-weight:800;font-size:0.88rem;letter-spacing:0.04em}}
+  .steps{{display:flex;gap:6px;margin-left:8px}}
+  .step{{font-size:0.72rem;padding:3px 10px;border-radius:99px;border:1px solid #1e2535;color:#5a6480}}
+  .step.active{{border-color:rgba(200,240,74,0.4);color:#c8f04a;background:rgba(200,240,74,0.08)}}
+  .back{{margin-left:auto;color:#5b9cf6;font-size:0.78rem;text-decoration:none;padding:4px 12px;
+         border:1px solid rgba(91,156,246,0.3);border-radius:6px}}
+  .back:hover{{background:rgba(91,156,246,0.1)}}
+  iframe{{flex:1;border:none;width:100%}}
+  .loading{{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;color:#5a6480}}
+  .spinner{{width:32px;height:32px;border:3px solid #1e2535;border-top-color:#c8f04a;
+            border-radius:50%;animation:spin 0.8s linear infinite}}
+  @keyframes spin{{to{{transform:rotate(360deg)}}}}
 </style>
 </head>
 <body>
   <div class="bar">
     <span class="logo">🔐 Vault Browser</span>
-    <span class="info">🖱 You have full control — solve captcha, click Sign In, then continue from here</span>
-    <a href="/dashboard" style="margin-left:auto;color:#5b9cf6;font-size:0.8rem;text-decoration:none">
-      ← Back to Dashboard
-    </a>
+    <div class="steps">
+      <span class="step active">1. Solve captcha</span>
+      <span class="step">2. Click Sign In</span>
+      <span class="step">3. Answers auto-filled</span>
+      <span class="step">4. Click Continue</span>
+    </div>
+    <a href="/dashboard" class="back">← Dashboard</a>
   </div>
-  <iframe id="vnc-frame" allowfullscreen></iframe>
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div>Connecting to browser...</div>
+    <div style="font-size:0.72rem">If this takes more than 10s, refresh the page</div>
+  </div>
+  <iframe id="vnc" style="display:none" allowfullscreen></iframe>
   <script>
-    // Use same hostname, port 6080 for noVNC
-    document.getElementById('vnc-frame').src = 
-      'http://' + window.location.hostname + ':6080/vnc.html?autoconnect=true&resize=scale&show_dot=true&reconnect=true';
+    const frame = document.getElementById('vnc');
+    const loading = document.getElementById('loading');
+    frame.onload = () => {{ loading.style.display='none'; frame.style.display='block'; }};
+    frame.src = '{vnc_url}';
+    setTimeout(() => {{ loading.style.display='none'; frame.style.display='block'; }}, 4000);
   </script>
 </body>
 </html>"""
@@ -567,196 +589,157 @@ def run_login(lid):
 
     login = dict(row)
 
-    import queue, threading
-
-    q = queue.Queue()
-
-    def run_playwright():
+    def automate():
         try:
             from playwright.sync_api import sync_playwright
-        except Exception as e:
-            q.put(("error", {"msg": "Import error: " + str(e)}))
-            q.put(None)
-            return
+            import shutil
 
-        try:
+            chromium_path = (
+                os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or
+                shutil.which("chromium") or "/usr/bin/chromium"
+            )
+
             with sync_playwright() as pw:
-                import shutil, os
-                chromium_path = (
-                    os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH") or
-                    shutil.which("chromium") or
-                    shutil.which("chromium-browser") or
-                    "/usr/bin/chromium"
-                )
-                q.put(("status", {"msg": "🚀 Launching browser…", "step": 1}))
-
                 browser = pw.chromium.launch(
-                    headless=False,          # headed — visible on virtual display
+                    headless=False,
                     executable_path=chromium_path,
                     args=["--no-sandbox", "--disable-setuid-sandbox",
-                          "--disable-dev-shm-usage",
-                          "--display=:99"]   # use Xvfb virtual display
+                          "--disable-dev-shm-usage", "--start-maximized",
+                          "--disable-blink-features=AutomationControlled"]
                 )
                 context = browser.new_context(
+                    viewport={"width": 1280, "height": 900},
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                "AppleWebKit/537.36 (KHTML, like Gecko) "
                                "Chrome/120.0.0.0 Safari/537.36"
                 )
                 page = context.new_page()
 
-                q.put(("status", {"msg": "🌐 Opening login page…", "step": 2}))
+                # ── Open login page ───────────────────────────────────────
+                print(f"[Vault] Opening {TARGET_URL}", flush=True)
                 page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(1500)
+                page.wait_for_timeout(2000)
 
-                q.put(("status", {"msg": "✏️ Filling username & password…", "step": 3}))
+                # ── Fill username ─────────────────────────────────────────
+                def js_fill(selector, value):
+                    page.evaluate("""([sel, val]) => {
+                        const el = document.querySelector(sel);
+                        if (!el) return;
+                        const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
+                        if (s) s.call(el, val); else el.value = val;
+                        ['focus','keydown','keypress','input','keyup','change','blur'].forEach(e =>
+                            el.dispatchEvent(new Event(e, {bubbles:true, cancelable:true}))
+                        );
+                    }""", [selector, value])
 
-                # Fill username — first visible text input before password
-                username_filled = False
+                def js_fill_handle(handle, value):
+                    page.evaluate("""([el, val]) => {
+                        const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
+                        if (s) s.call(el, val); else el.value = val;
+                        ['focus','keydown','keypress','input','keyup','change','blur'].forEach(e =>
+                            el.dispatchEvent(new Event(e, {bubbles:true, cancelable:true}))
+                        );
+                    }""", [handle, value])
+
+                # Username = first non-password/hidden input before the password field
+                all_inputs = page.query_selector_all("input")
+                pass_el = page.query_selector('input[type="password"]')
+                pass_idx = next((i for i,el in enumerate(all_inputs) if el==pass_el), 999)
+
+                user_el = next((
+                    el for i,el in enumerate(all_inputs)
+                    if i < pass_idx and
+                    (el.get_attribute("type") or "text").lower() not in
+                    ["hidden","submit","button","checkbox","radio","file","image"]
+                ), None)
+
+                if user_el:
+                    js_fill_handle(user_el, login["username"])
+                    print(f"[Vault] Username filled", flush=True)
+
+                # ── Fill password ─────────────────────────────────────────
+                page.wait_for_timeout(400)
+                if pass_el:
+                    js_fill_handle(pass_el, login["password"])
+                    print(f"[Vault] Password filled", flush=True)
+
+                # ── Wait for security questions page ──────────────────────
+                # (user solves captcha and clicks Sign In in the VNC viewer)
+                print("[Vault] Waiting for security questions page...", flush=True)
                 try:
-                    all_inputs = page.locator(
-                        'input:not([type="password"]):not([type="hidden"])'
-                        ':not([type="submit"]):not([type="button"])'
-                        ':not([type="checkbox"]):not([type="radio"])'
-                    ).all()
-                    for inp in all_inputs:
-                        try:
-                            if inp.is_visible(timeout=300):
-                                inp.fill(login["username"])
-                                username_filled = True
-                                break
-                        except Exception:
-                            continue
+                    page.wait_for_function(
+                        "() => document.body.innerText.toLowerCase().includes('security question')",
+                        timeout=180000  # 3 minutes
+                    )
+                    print("[Vault] Security questions page detected!", flush=True)
                 except Exception:
-                    pass
-
-                # Fill password
-                password_filled = False
-                try:
-                    pwd = page.locator('input[type="password"]').first
-                    if pwd.is_visible(timeout=2000):
-                        pwd.fill(login["password"])
-                        password_filled = True
-                except Exception:
-                    pass
-
-                u = "✓ Username" if username_filled else "✗ Username"
-                p = "✓ Password" if password_filled else "✗ Password"
-                q.put(("status", {
-                    "msg": f"{u}  {p} — solve captcha then click Sign In",
-                    "step": 4, "waiting_captcha": True
-                }))
-
-                # Wait for security questions page (up to 3 min)
-                q.put(("status", {"msg": "⏳ Waiting for security questions page…", "step": 5}))
-                security_found = False
-                for _ in range(180):
-                    try:
-                        txt = page.inner_text("body").lower()
-                        if "security question" in txt or "secret question" in txt:
-                            security_found = True
-                            break
-                    except Exception:
-                        pass
-                    time.sleep(1)
-
-                if not security_found:
-                    q.put(("error", {"msg": "Security questions page not detected within 3 minutes."}))
+                    print("[Vault] Timed out waiting for security questions", flush=True)
+                    page.wait_for_timeout(1800000)
                     browser.close()
-                    q.put(None)
                     return
 
-                q.put(("status", {"msg": "🛡 Filling security answers…", "step": 6}))
-                page.wait_for_timeout(800)
+                page.wait_for_timeout(1200)
 
+                # ── Fill security answers ─────────────────────────────────
                 answers = [
-                    {"q": (login.get("sel_q1") or "").lower(), "a": login.get("ans_q1") or ""},
-                    {"q": (login.get("sel_q2") or "").lower(), "a": login.get("ans_q2") or ""},
-                    {"q": (login.get("sel_q3") or "").lower(), "a": login.get("ans_q3") or ""},
+                    login.get("ans_q1") or "",
+                    login.get("ans_q2") or "",
+                    login.get("ans_q3") or "",
                 ]
-                answers = [x for x in answers if x["a"].strip()]
+                answers = [a for a in answers if a.strip()]
 
-                # Get answer boxes — visible text inputs excluding username
-                all_inp = page.locator(
-                    'input:not([type="password"]):not([type="hidden"])'
-                    ':not([type="submit"]):not([type="button"])'
-                    ':not([type="checkbox"]):not([type="radio"])'
-                ).all()
-                boxes = []
-                for inp in all_inp:
-                    try:
-                        if inp.is_visible(timeout=300):
-                            val = inp.input_value()
-                            if val.strip() != login["username"].strip():
-                                boxes.append(inp)
-                    except Exception:
-                        continue
+                if answers:
+                    all_inputs_now = page.query_selector_all("input")
+                    answer_boxes = []
+                    for el in all_inputs_now:
+                        t = (el.get_attribute("type") or "text").lower()
+                        # Exclude truly non-fillable types only
+                        if t in ["hidden","submit","button","checkbox","radio","file","image","reset"]:
+                            continue
+                        # Skip username field
+                        try:
+                            val = el.input_value() or ""
+                            if val.strip() == login["username"].strip():
+                                continue
+                        except Exception:
+                            pass
+                        answer_boxes.append(el)
 
-                filled = 0
-                used = set()
+                    print(f"[Vault] Found {len(answer_boxes)} answer box(es)", flush=True)
 
-                # Match by question text
-                for i, box in enumerate(boxes):
-                    best, best_score = None, 0
-                    try:
-                        nearby = page.evaluate(
-                            "(el) => { let t=''; let n=el.parentElement; "
-                            "for(let i=0;i<4&&n;i++){t+=' '+(n.innerText||'');n=n.parentElement;} "
-                            "return t.toLowerCase(); }",
-                            box.element_handle()
-                        )
-                    except Exception:
-                        nearby = ""
-                    for j, ans in enumerate(answers):
-                        if j in used or not ans["q"]: continue
-                        words = [w for w in ans["q"].split() if len(w) > 3]
-                        score = sum(1 for w in words if w in nearby) / (len(words) or 1)
-                        if score > best_score and score >= 0.25:
-                            best_score = score
-                            best = (j, ans)
-                    if best:
-                        try: box.fill(best[1]["a"]); used.add(best[0]); filled += 1
-                        except Exception: pass
+                    filled = 0
+                    for i, box in enumerate(answer_boxes[:len(answers)]):
+                        try:
+                            js_fill_handle(box, answers[i])
+                            filled += 1
+                            print(f"[Vault] Answer {i+1} filled", flush=True)
+                        except Exception as e:
+                            print(f"[Vault] Answer {i+1} failed: {e}", flush=True)
 
-                # Positional fallback
-                if filled == 0:
-                    for i, box in enumerate(boxes[:len(answers)]):
-                        ans = next((a for j,a in enumerate(answers) if j not in used), None)
-                        if ans:
-                            try: box.fill(ans["a"]); used.add(i); filled += 1
-                            except Exception: pass
+                    print(f"[Vault] {filled} answer(s) filled. User can now click Continue.", flush=True)
 
-                q.put(("status", {
-                    "msg": f"✓ {filled} answer{'s' if filled>1 else ''} filled — click Continue in the browser",
-                    "step": 7,
-                    "done": False,
-                    "take_control": True
-                }))
-
-                # Keep browser alive for 30 minutes so user can take over
-                time.sleep(1800)
+                # ── Keep browser open for user to take over ───────────────
+                page.wait_for_timeout(1800000)  # 30 minutes
                 browser.close()
 
         except Exception as e:
-            q.put(("error", {"msg": "Error: " + str(e)}))
+            print(f"[Vault] Error: {e}", flush=True)
 
-        q.put(None)
+    # Kill any existing browser session for this user
+    existing = _browser_sessions.pop(session["key_id"], None)
+    if existing:
+        try: existing.set()
+        except: pass
 
-    t = threading.Thread(target=run_playwright, daemon=True)
+    stop_event = threading.Event()
+    _browser_sessions[session["key_id"]] = stop_event
+
+    t = threading.Thread(target=automate, daemon=True)
     t.start()
 
-    def generate():
-        while True:
-            item = q.get()
-            if item is None:
-                break
-            event, data = item
-            yield "event: " + event + "\ndata: " + json.dumps(data) + "\n\n"
+    time.sleep(2)
+    return redirect("/vnc")
 
-    return app.response_class(
-        stream_with_context(generate()),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
