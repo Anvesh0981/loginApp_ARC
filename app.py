@@ -588,30 +588,65 @@ def debug_playwright():
 
 @app.route("/debug/vnc")
 def debug_vnc():
-    """Debug — check VNC and noVNC status. Remove after confirming it works."""
-    import os, socket
+    """Debug — check VNC, noVNC, and WebSocket status."""
+    import os, socket, subprocess
     info = {}
+
     # Check noVNC files
-    novnc_paths = ["/usr/share/novnc", "/usr/share/novnc/utils/novnc_proxy"]
-    for p in novnc_paths:
-        info[p] = os.path.exists(p)
-    # List novnc dir
     novnc_dir = "/usr/share/novnc"
     if os.path.isdir(novnc_dir):
-        info["novnc_files"] = os.listdir(novnc_dir)[:20]
+        info["novnc_exists"] = True
+        info["novnc_top_files"] = os.listdir(novnc_dir)[:30]
+        # Recursively find rfb.js — this is the critical file
+        try:
+            result = subprocess.run(
+                ["find", novnc_dir, "-name", "rfb.js", "-type", "f"],
+                capture_output=True, text=True, timeout=5
+            )
+            info["rfb_js_locations"] = result.stdout.strip().split("\n") if result.stdout.strip() else []
+        except Exception:
+            info["rfb_js_locations"] = "search failed"
+        # Check core dir
         core_dir = os.path.join(novnc_dir, "core")
         if os.path.isdir(core_dir):
-            info["novnc_core"] = os.listdir(core_dir)[:10]
-    # Check VNC port
+            info["novnc_core_files"] = os.listdir(core_dir)[:20]
+    else:
+        info["novnc_exists"] = False
+
+    # Check VNC port 5900
     try:
-        s = socket.create_connection(("localhost", 5900), timeout=1)
+        s = socket.create_connection(("localhost", 5900), timeout=2)
         s.close()
         info["vnc_5900"] = "OPEN"
     except Exception as e:
         info["vnc_5900"] = f"CLOSED: {e}"
+
+    # Check websockify port 6080
+    try:
+        s = socket.create_connection(("localhost", 6080), timeout=2)
+        s.close()
+        info["websockify_6080"] = "OPEN"
+    except Exception as e:
+        info["websockify_6080"] = f"CLOSED: {e}"
+
+    # Check running processes
+    try:
+        result = subprocess.run(
+            ["ps", "aux"],
+            capture_output=True, text=True, timeout=5
+        )
+        lines = result.stdout.split("\n")
+        info["xvfb_running"] = any("Xvfb" in l for l in lines)
+        info["x11vnc_running"] = any("x11vnc" in l for l in lines)
+        info["websockify_running"] = any("websockify" in l for l in lines)
+        info["chromium_running"] = any("chromium" in l.lower() for l in lines)
+    except Exception:
+        info["process_check"] = "failed"
+
     # Check env
     info["DISPLAY"] = os.environ.get("DISPLAY", "not set")
     info["PLAYWRIGHT_CHROMIUM"] = os.environ.get("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", "not set")
+    info["flask_sock_loaded"] = _has_sock
     return jsonify(info)
 
 
@@ -676,7 +711,18 @@ body{background:#0c0e15;font-family:system-ui,sans-serif;height:100vh;display:fl
 .step{font-size:0.7rem;padding:3px 10px;border-radius:99px;border:1px solid #1e2535;color:#5a6480}
 .back{margin-left:auto;color:#5b9cf6;font-size:0.78rem;text-decoration:none;
       padding:4px 12px;border:1px solid rgba(91,156,246,0.3);border-radius:6px}
-#screen{flex:1;width:100%}
+#vnc-container{flex:1;width:100%;position:relative;overflow:hidden}
+#status-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;background:#0c0e15;z-index:10;transition:opacity 0.5s}
+#status-overlay.hidden{opacity:0;pointer-events:none}
+.status-spinner{width:40px;height:40px;border:3px solid #1e2535;border-top-color:#c8f04a;
+  border-radius:50%;animation:spin 1s linear infinite;margin-bottom:16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+#status-text{color:#5a6480;font-size:0.85rem;text-align:center;max-width:400px}
+#status-text .highlight{color:#c8f04a}
+#retry-btn{display:none;margin-top:16px;padding:8px 24px;border-radius:8px;border:1px solid #c8f04a;
+  background:rgba(200,240,74,0.1);color:#c8f04a;font-size:0.85rem;cursor:pointer}
+#retry-btn:hover{background:rgba(200,240,74,0.2)}
 </style>
 </head>
 <body>
@@ -688,46 +734,131 @@ body{background:#0c0e15;font-family:system-ui,sans-serif;height:100vh;display:fl
   <span class="step">4 Continue</span>
   <a href="/dashboard" class="back">&#8592; Dashboard</a>
 </div>
-<canvas id="screen"></canvas>
-<script src="/novnc-static/core/rfb.js" type="module" id="rfb-script"></script>
+<div id="vnc-container">
+  <div id="status-overlay">
+    <div class="status-spinner"></div>
+    <div id="status-text">Connecting to live browser<span class="highlight">...</span></div>
+    <button id="retry-btn" onclick="attemptConnect()">Retry Connection</button>
+  </div>
+</div>
+
 <script type="module">
-// Wait for rfb.js to be available
-async function startVNC() {
-  const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://')
-                + location.host + '/websockify';
+const statusOverlay = document.getElementById('status-overlay');
+const statusText = document.getElementById('status-text');
+const retryBtn = document.getElementById('retry-btn');
+const container = document.getElementById('vnc-container');
+
+let rfb = null;
+let attempt = 0;
+const MAX_RETRIES = 15;
+const RETRY_DELAY = 2000;
+
+function setStatus(msg, showRetry) {
+  statusText.innerHTML = msg;
+  retryBtn.style.display = showRetry ? 'block' : 'none';
+}
+
+// Try multiple import paths — noVNC location varies by distro/version
+async function loadRFB() {
+  const paths = [
+    '/novnc-static/core/rfb.js',
+    '/novnc-static/noVNC/lib/rfb.js',
+    '/novnc-static/rfb.js'
+  ];
+  for (const p of paths) {
+    try {
+      const mod = await import(p);
+      console.log('Loaded RFB from:', p);
+      return mod.default;
+    } catch(e) {
+      console.warn('RFB not at', p, e.message);
+    }
+  }
+  throw new Error('Could not load noVNC RFB module from any known path');
+}
+
+async function attemptConnect() {
+  attempt++;
+  if (attempt > MAX_RETRIES) {
+    setStatus('Could not connect after ' + MAX_RETRIES + ' attempts.<br>The browser may not have launched.<br>Check <span class="highlight">/debug/screenshots</span> for details.', true);
+    return;
+  }
+
+  setStatus('Connecting to live browser<span class="highlight">...</span> (attempt ' + attempt + '/' + MAX_RETRIES + ')', false);
+
   try {
-    const { default: RFB } = await import('/novnc-static/core/rfb.js');
-    const rfb = new RFB(document.getElementById('screen'), wsUrl);
+    const RFB = await loadRFB();
+    const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/websockify';
+
+    // Clean up previous connection if any
+    if (rfb) {
+      try { rfb.disconnect(); } catch(e) {}
+      rfb = null;
+    }
+
+    rfb = new RFB(container, wsUrl);
     rfb.scaleViewport = true;
-    rfb.addEventListener('connect', () => console.log('VNC connected'));
-    rfb.addEventListener('disconnect', (e) => {
-      if (!e.detail.clean) setTimeout(startVNC, 2000);
+    rfb.resizeSession = false;
+
+    rfb.addEventListener('connect', () => {
+      console.log('VNC connected on attempt', attempt);
+      statusOverlay.classList.add('hidden');
+      attempt = 0;  // reset for future reconnects
     });
+
+    rfb.addEventListener('disconnect', (e) => {
+      console.log('VNC disconnected, clean:', e.detail.clean);
+      statusOverlay.classList.remove('hidden');
+      if (!e.detail.clean) {
+        setStatus('Connection lost. Reconnecting<span class="highlight">...</span>', false);
+        setTimeout(attemptConnect, RETRY_DELAY);
+      } else {
+        setStatus('Browser session ended.', true);
+      }
+    });
+
+    rfb.addEventListener('credentialsrequired', () => {
+      // No password VNC — just send empty
+      rfb.sendCredentials({ password: '' });
+    });
+
   } catch(e) {
-    console.error('VNC error:', e);
-    document.getElementById('screen').outerHTML =
-      '<div style="color:#c8f04a;padding:20px;font-family:monospace">VNC Error: ' + e + '</div>';
+    console.error('VNC connection error:', e);
+    setStatus('Waiting for browser to start<span class="highlight">...</span> (attempt ' + attempt + '/' + MAX_RETRIES + ')', false);
+    setTimeout(attemptConnect, RETRY_DELAY);
   }
 }
-startVNC();
+
+// Start connecting
+window.attemptConnect = attemptConnect;
+attemptConnect();
 </script>
 </body>
 </html>"""
 
 @app.route("/novnc-static/<path:filename>")
 def novnc_static(filename):
-    """Serve noVNC static files."""
-    import os
-    for base in ["/usr/share/novnc", "/usr/share/novnc/core"]:
+    """Serve noVNC static files — handles various distro layouts."""
+    from flask import send_file
+    import mimetypes
+
+    # Search multiple possible locations
+    search_dirs = [
+        "/usr/share/novnc",
+        "/usr/share/novnc/core",
+        "/usr/share/novnc/noVNC",
+        "/usr/share/novnc/noVNC/lib",
+    ]
+    for base in search_dirs:
         fp = os.path.join(base, filename)
         if os.path.isfile(fp):
-            from flask import send_file
-            return send_file(fp)
-        # try without subdir
-        fp2 = os.path.join("/usr/share/novnc", filename)
-        if os.path.isfile(fp2):
-            from flask import send_file
-            return send_file(fp2)
+            mime = mimetypes.guess_type(fp)[0] or "application/octet-stream"
+            # Ensure .js files served with correct MIME for ES module imports
+            if fp.endswith(".js"):
+                mime = "application/javascript"
+            return send_file(fp, mimetype=mime)
+
+    print(f"[noVNC] File not found: {filename}", flush=True)
     return f"Not found: {filename}", 404
 
 
