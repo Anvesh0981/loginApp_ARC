@@ -296,117 +296,52 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
   <div class="run-modal">
     <div class="run-top">
       <div>
-        <div class="run-title">▶ Run Login — <span id="run-label">—</span></div>
-        <div class="run-sub">Follow the steps below to complete login</div>
+        <div class="run-title">&#9654; Run &#8212; <span id="run-label">&#8212;</span></div>
+        <div class="run-sub">Extension auto-fills everything. You just solve the captcha.</div>
       </div>
-      <button class="m-close" onclick="closeRun()">✕</button>
+      <button class="m-close" onclick="closeRun()">&#10005;</button>
     </div>
     <div class="run-body">
-
-      <!-- STEP 1: Open + auto-fill login -->
-      <div class="run-section" style="margin-bottom:14px">
-        <div class="run-section-title">Step 1 — Open &amp; Fill Login Page</div>
-        <div style="background:rgba(200,240,74,0.05);border:1px dashed rgba(200,240,74,0.25);border-radius:10px;padding:14px 16px;text-align:center;margin-bottom:10px">
-          <div style="font-size:0.68rem;color:var(--muted);margin-bottom:8px;line-height:1.5">Drag to bookmarks bar once — then click it on the login page</div>
-          <a id="bm-login" href="#"
-             style="display:inline-block;padding:9px 22px;border-radius:8px;background:var(--accent);
-                    color:#0c0e15;font-weight:800;font-size:0.88rem;text-decoration:none;
-                    font-family:var(--serif);letter-spacing:0.02em;cursor:grab"
-             title="Vault: Fill Login — drag to bookmarks bar">
-            🔐 Fill Login
-          </a>
-          <div style="font-size:0.65rem;color:var(--muted2);margin-top:8px">Fills username &amp; password. Works with React, Angular, delayed fields.</div>
+      <div style="background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">Chrome Extension ID</span>
+          <span id="ext-pill" style="font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)">Not set</span>
         </div>
-        <button class="run-url-btn" id="run-url-btn" onclick="openTargetUrl()" style="margin-bottom:0">
-          <span>🌐</span> <span>Open Login Page</span>
-        </button>
+        <div style="display:flex;gap:8px">
+          <input id="ext-id-input" placeholder="Paste extension ID here (one time only)"
+            style="flex:1;background:var(--card);border:1px solid var(--border2);border-radius:7px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:0.75rem;outline:none">
+          <button onclick="saveExtId()" style="padding:8px 14px;border-radius:7px;border:1px solid rgba(200,240,74,0.3);background:rgba(200,240,74,0.1);color:var(--accent);cursor:pointer;font-size:0.75rem;font-weight:700">Save</button>
+        </div>
+        <div style="font-size:0.65rem;color:var(--muted2);margin-top:6px;line-height:1.5">Chrome -&gt; chrome://extensions -&gt; Developer Mode ON -&gt; copy the ID</div>
       </div>
-
-      <!-- Credentials ref -->
-      <div class="run-section" style="margin-bottom:14px">
-        <div class="run-section-title">Credentials Reference</div>
+      <button class="run-url-btn" id="run-url-btn" onclick="doRun()">&#9654; Run &#8212; Open &amp; Auto-Fill Everything</button>
+      <div id="run-status" style="font-size:0.75rem;color:var(--muted);text-align:center;margin-top:8px;min-height:18px"></div>
+      <div class="run-section" style="margin-top:14px">
+        <div class="run-section-title">Credentials (manual fallback)</div>
         <div class="run-field">
           <span class="run-field-label">Username</span>
-          <span class="run-field-val" id="run-username">—</span>
+          <span class="run-field-val" id="run-username">&#8212;</span>
           <button class="copy-btn" onclick="copyField('run-username',this)">Copy</button>
         </div>
         <div class="run-field">
           <span class="run-field-label">Password</span>
-          <span class="run-field-val masked" id="run-password-disp">••••••••</span>
+          <span class="run-field-val masked" id="run-password-disp">&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;</span>
           <button class="show-pass-btn" id="run-show-btn" onclick="toggleRunPass()">Show</button>
           <button class="copy-btn" onclick="copyRunPass(this)">Copy</button>
         </div>
       </div>
-
-      <!-- STEP 2: Security questions -->
-      <div class="run-section">
-        <div class="run-section-title">Step 2 — Fill Security Questions</div>
-        <div style="background:rgba(167,139,250,0.05);border:1px dashed rgba(167,139,250,0.25);border-radius:10px;padding:14px 16px;text-align:center;margin-bottom:10px">
-          <div style="font-size:0.68rem;color:var(--muted);margin-bottom:8px;line-height:1.5">Drag to bookmarks bar once — then click it on the security questions page</div>
-          <a id="bm-security" href="#"
-             style="display:inline-block;padding:9px 22px;border-radius:8px;background:var(--purple);
-                    color:#fff;font-weight:800;font-size:0.88rem;text-decoration:none;
-                    font-family:var(--serif);letter-spacing:0.02em;cursor:grab"
-             title="Vault: Fill Security Answers — drag to bookmarks bar">
-            🛡 Fill Answers
-          </a>
-          <div style="font-size:0.65rem;color:var(--muted2);margin-top:8px">Matches question text and fills both answers automatically.</div>
-        </div>
-        <div style="font-size:0.68rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em">Or copy manually</div>
+      <div class="run-section" id="run-sq-section">
+        <div class="run-section-title">Security Answers (manual fallback)</div>
         <div id="run-sq-list"></div>
       </div>
-
     </div>
   </div>
 </div>
 
 <script>
-// SQ_SHORT replaced by dynamic question text from sel_q1/sel_q2/sel_q3
-// Security questions — hardcoded in JS so they always render even if Jinja fails
-const QUESTIONS = [
-  "What is your mother's maiden name?",
-  "What was the name of your first/current/favorite pet?",
-  "What was your first car?",
-  "What elementary school did you attend?",
-  "What is the name of the town/city where you were born?",
-  "What is the name of the road/street you grew up on?",
-  "What is your least favorite food?",
-  "What was the first company that you worked for?",
-  "What is your favorite food?",
-  "What high school did you attend?",
-  "Where did you meet your spouse?",
-  "What is your sibling's middle name?",
-  "Who was your childhood hero?",
-  "In what city or town was your first job?",
-  "What is the name of a college you applied to but didn't attend?",
-];
 
-function buildSqBlocks(sel1='', sel2='', sel3='') {
-  const container = document.getElementById('sq-blocks-container');
-  if (!container) return;
-  const opts = QUESTIONS.map(q => `<option value="${x(q)}">${x(q)}</option>`).join('');
-  container.innerHTML = [1,2,3].map(n => {
-    const selVal = n===1?sel1 : n===2?sel2 : sel3;
-    return `<div class="sq-block">
-      <div class="f" style="margin-bottom:10px">
-        <label style="font-size:0.72rem;color:var(--text);text-transform:none;letter-spacing:0;font-weight:600">Select Security Question ${n}*</label>
-        <select id="f-sq${n}" class="sq-select">
-          <option value="">Select Security Question ${n}</option>
-          ${opts}
-        </select>
-      </div>
-      <div class="f">
-        <label style="font-size:0.72rem;color:var(--text);text-transform:none;letter-spacing:0;font-weight:600">Answer to Security Question ${n}*</label>
-        <input id="f-a${n}" placeholder="" autocomplete="off">
-      </div>
-    </div>`;
-  }).join('');
-  // Set selected values
-  if(sel1) document.getElementById('f-sq1').value = sel1;
-  if(sel2) document.getElementById('f-sq2').value = sel2;
-  if(sel3) document.getElementById('f-sq3').value = sel3;
-}
-
+const QUESTIONS=["What is your mother's maiden name?","What was the name of your first/current/favorite pet?","What was your first car?","What elementary school did you attend?","What is the name of the town/city where you were born?","What is the name of the road/street you grew up on?","What is your least favorite food?","What was the first company that you worked for?","What is your favorite food?","What high school did you attend?","Where did you meet your spouse?","What is your sibling's middle name?","Who was your childhood hero?","In what city or town was your first job?","What is the name of a college you applied to but didn't attend?"];
+function buildSqBlocks(s1,s2,s3){const c=document.getElementById('sq-blocks-container');if(!c)return;const opts=QUESTIONS.map(q=>'<option value="'+q+'">'+q+'</option>').join('');c.innerHTML=[1,2,3].map(n=>'<div class="sq-block"><div class="f" style="margin-bottom:10px"><label style="font-size:0.72rem;color:var(--text);text-transform:none;letter-spacing:0;font-weight:600">Select Security Question '+n+'*</label><select id="f-sq'+n+'" class="sq-select"><option value="">Select Security Question '+n+'</option>'+opts+'</select></div><div class="f"><label style="font-size:0.72rem;color:var(--text);text-transform:none;letter-spacing:0;font-weight:600">Answer to Security Question '+n+'*</label><input id="f-a'+n+'" placeholder="" autocomplete="off"></div></div>').join('');if(s1)document.getElementById('f-sq1').value=s1;if(s2)document.getElementById('f-sq2').value=s2;if(s3)document.getElementById('f-sq3').value=s3;}
 let all = [];
 
 (async()=>{ await loadAll(); })();
@@ -477,22 +412,7 @@ function renderGrid(list){
   }).join('');
 }
 
-function openAdd(){
-  try {
-    const ov = document.getElementById('overlay');
-    if(!ov){ alert('Modal not found — try refreshing the page'); return; }
-    const title = document.getElementById('m-title');
-    if(title) title.textContent='Add Login';
-    const eid = document.getElementById('edit-id');
-    if(eid) eid.value='';
-    buildSqBlocks();
-    clearForm();
-    ov.classList.add('open');
-  } catch(e) {
-    alert('Error opening modal: ' + e.message + '\n\nTry refreshing the page.');
-    console.error('openAdd error:', e);
-  }
-}
+function openAdd(){try{buildSqBlocks();clearForm();document.getElementById('m-title').textContent='Add Login';document.getElementById('edit-id').value='';document.getElementById('overlay').classList.add('open');}catch(e){alert('Error: '+e.message);console.error(e);}}
 function openEdit(id){
   const l=all.find(z=>z.id===id); if(!l)return;
   document.getElementById('m-title').textContent='Edit Login';
@@ -501,7 +421,7 @@ function openEdit(id){
   document.getElementById('f-user').value=l.username||'';
   document.getElementById('f-pass').value=l.password||'';
   document.getElementById('f-status').value=l.status||'pending';
-  buildSqBlocks(l.sel_q1||'', l.sel_q2||'', l.sel_q3||'');
+  buildSqBlocks(l.sel_q1||'',l.sel_q2||'',l.sel_q3||'');
   document.getElementById('f-a1').value=l.ans_q1||'';
   document.getElementById('f-a2').value=l.ans_q2||'';
   document.getElementById('f-a3').value=l.ans_q3||'';
@@ -510,14 +430,7 @@ function openEdit(id){
   document.getElementById('overlay').classList.add('open');
 }
 function closeModal(){document.getElementById('overlay').classList.remove('open');}
-function clearForm(){
-  ['f-label','f-user','f-pass','f-sq1','f-a1','f-sq2','f-a2','f-sq3','f-a3','f-date','f-notes'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.value='';
-  });
-  const st=document.getElementById('f-status');
-  if(st) st.value='pending';
-}
+function clearForm(){['f-label','f-user','f-pass','f-sq1','f-a1','f-sq2','f-a2','f-sq3','f-a3','f-date','f-notes'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});const st=document.getElementById('f-status');if(st)st.value='pending';}
 function togglePass(){const i=document.getElementById('f-pass');i.type=i.type==='password'?'text':'password';}
 
 async function saveLogin(){
@@ -527,12 +440,12 @@ async function saveLogin(){
     username:document.getElementById('f-user').value.trim(),
     password:document.getElementById('f-pass').value,
     status:document.getElementById('f-status').value,
-    sel_q1:(document.getElementById('f-sq1')||{}).value||'',
-    ans_q1:(document.getElementById('f-a1')||{value:''}).value.trim(),
-    sel_q2:(document.getElementById('f-sq2')||{}).value||'',
-    ans_q2:(document.getElementById('f-a2')||{value:''}).value.trim(),
-    sel_q3:(document.getElementById('f-sq3')||{}).value||'',
-    ans_q3:(document.getElementById('f-a3')||{value:''}).value.trim(),
+    sel_q1:document.getElementById('f-sq1').value,
+    ans_q1:document.getElementById('f-a1').value.trim(),
+    sel_q2:document.getElementById('f-sq2').value,
+    ans_q2:document.getElementById('f-a2').value.trim(),
+    sel_q3:document.getElementById('f-sq3').value,
+    ans_q3:document.getElementById('f-a3').value.trim(),
     target_date:document.getElementById('f-date').value,
     notes:document.getElementById('f-notes').value.trim(),
   };
@@ -564,163 +477,20 @@ function toast(msg,isErr=false){
   tt=setTimeout(()=>el.classList.remove('show'),3000);
 }
 function x(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-document.getElementById('overlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal();});
-document.getElementById('run-overlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeRun();});
 
 /* ── Run Modal ── */
-let _runPass = '';
-let _runUsername = '';
-let _runData = {};
-let _targetUrl = '{{ target_url }}';
-
-function sharedCode(){
-  return [
-    // Simulates real user interaction: focus → set value → fire all events in correct order
-    "function fill(el,val){" +
-    "  try{el.focus();}catch(e){}" +
-    "  try{el.dispatchEvent(new Event('focus',{bubbles:true}));}catch(e){}" +
-    "  try{" +
-    "    var s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');" +
-    "    if(s&&s.set)s.set.call(el,val);else el.value=val;" +
-    "  }catch(e){el.value=val;}" +
-    "  var evts=['keydown','keypress','input','keyup','change','blur'];" +
-    "  evts.forEach(function(ev){" +
-    "    try{el.dispatchEvent(new Event(ev,{bubbles:true,cancelable:true}));}catch(e){}" +
-    "    try{el.dispatchEvent(new KeyboardEvent(ev,{bubbles:true,cancelable:true,key:'a',char:'a'}));}catch(e){}" +
-    "  });" +
-    "  try{" +
-    "    var nv=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');" +
-    "    if(nv&&nv.get&&nv.get.call(el)!==val){el.setAttribute('value',val);}" +
-    "  }catch(e){}" +
-    "}",
-    "function banner(msg,ok){var old=document.getElementById('__vlt__');if(old)old.remove();var b=document.createElement('div');b.id='__vlt__';b.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;padding:13px 20px;border-radius:12px;font-family:system-ui,sans-serif;font-size:13px;font-weight:600;max-width:360px;line-height:1.5;box-shadow:0 8px 30px rgba(0,0,0,0.5);'+(ok?'background:#0a1a0a;border:2px solid #3dffa0;color:#3dffa0;':'background:#1a0a0a;border:2px solid #f06060;color:#f06060;');b.innerHTML='<b>Vault:</b> '+msg+'<button onclick=\"this.parentNode.remove()\" style=\"float:right;background:none;border:none;color:inherit;opacity:0.5;cursor:pointer;font-size:16px;margin-left:10px\">x</button>';document.body.appendChild(b);setTimeout(function(){if(b&&b.parentNode)b.remove();},9000);}"
-  ].join('\n');
-}
-
-function buildLoginBookmarklet(data) {
-  const u = JSON.stringify(data.username || '');
-  const p = JSON.stringify(data.password || '');
-  const code = `(function(){
-${sharedCode()}
-var username=${u};
-var password=${p};
-var attempt=0;
-function tryFill(){
-  attempt++;
-  var passEl=document.querySelector('input[type="password"]');
-  var userEl=document.querySelector('input[type="email"]')||document.querySelector('input[autocomplete="username"]')||document.querySelector('input[autocomplete="email"]')||document.querySelector('input[name="username"]')||document.querySelector('input[name="email"]')||document.querySelector('input[id*="user"]')||document.querySelector('input[id*="email"]')||document.querySelector('input[placeholder*="user" i]')||document.querySelector('input[placeholder*="email" i]')||document.querySelector('input[placeholder*="id" i]');
-  if(!userEl){var all=Array.from(document.querySelectorAll('input[type=text],input[type=email],input:not([type])')).filter(function(el){var s=window.getComputedStyle(el);return s.display!=='none'&&s.visibility!=='hidden'&&el.offsetParent!==null&&!el.disabled&&!el.readOnly;});userEl=all.find(function(el){return el!==passEl;})||null;}
-  var fu=false,fp=false;
-  if(userEl){fill(userEl,username);fu=true;}
-  if(passEl){fill(passEl,password);fp=true;}
-  if(fu&&fp){
-    // Fill username first, then password after short delay (mimics real typing)
-    fill(userEl,username);
-    setTimeout(function(){
-      fill(passEl,password);
-      banner('Username + Password filled — solve captcha then click Sign In',true);
-    },300);
-  } else if(fu&&!fp){
-    fill(userEl,username);
-    banner('Username filled. Password field not found — fill manually.',true);
-  } else if(!fu&&fp){
-    fill(passEl,password);
-    banner('Password filled. Username field not found — fill manually.',true);
-  } else if(attempt<6){
-    banner('Waiting for fields to load… ('+attempt+'/5)',true);
-    setTimeout(tryFill,900);
-  } else {
-    banner('Fields not found. Is this the right page? Try refreshing.',false);
-  }
-}
-tryFill();
-})();`;
-  return 'javascript:' + encodeURIComponent(code);
-}
-
-function buildSecurityBookmarklet(data) {
-  const answers = [
-    { q: data.sel_q1||'', a: data.ans_q1||'' },
-    { q: data.sel_q2||'', a: data.ans_q2||'' },
-    { q: data.sel_q3||'', a: data.ans_q3||'' },
-  ].filter(function(x){ return x.a; });
-  const aj = JSON.stringify(answers);
-  const code = `(function(){
-${sharedCode()}
-var answers=${aj};
-if(!answers.length){banner('No security answers saved.',false);return;}
-var attempt=0;
-function tryFill(){
-  attempt++;
-  var inputs=Array.from(document.querySelectorAll('input[type=text],input:not([type])')).filter(function(el){var s=window.getComputedStyle(el);return s.display!=='none'&&s.visibility!=='hidden'&&el.offsetParent!==null&&!el.disabled&&!el.readOnly;});
-  if(!inputs.length){if(attempt<5){setTimeout(tryFill,700);}else{banner('No input fields found.',false);}return;}
-  var filled=0;var used=[];
-  answers.forEach(function(pair){
-    if(!pair.q)return;
-    var qw=pair.q.toLowerCase().split(/\W+/).filter(function(w){return w.length>3;});
-    var best=null;var bs=0;
-    Array.from(document.querySelectorAll('label,p,span,div,td,li,h3,h4,h5')).forEach(function(el){var t=(el.innerText||'').toLowerCase();if(t.length<5||t.length>400)return;var sc=qw.filter(function(w){return t.includes(w);}).length/(qw.length||1);if(sc>bs&&sc>=0.3){bs=sc;best=el;}});
-    var inp=null;
-    if(best){
-      if(best.tagName==='LABEL'&&best.htmlFor){inp=document.getElementById(best.htmlFor);}
-      if(!inp){var c=best.closest('div,tr,td,fieldset,li,section,form');if(c)inp=Array.from(c.querySelectorAll('input[type=text],input:not([type])')).find(function(e){return !used.includes(e)&&e.offsetParent;});}
-      if(!inp){var sib=best.nextElementSibling;while(sib){if(sib.matches&&sib.matches('input[type=text],input:not([type])')&&!used.includes(sib)){inp=sib;break;}var f=sib.querySelector('input[type=text],input:not([type])');if(f&&!used.includes(f)){inp=f;break;}sib=sib.nextElementSibling;}}
-    }
-    if(inp&&!used.includes(inp)){fill(inp,pair.a);used.push(inp);filled++;}
-  });
-  if(filled===0){inputs.slice(0,answers.length).forEach(function(inp,i){if(answers[i]&&!used.includes(inp)){fill(inp,answers[i].a);used.push(inp);filled++;}});}
-  banner(filled>0?filled+' answer'+(filled>1?'s':'')+' filled — click Continue':'Could not match. Copy manually.',filled>0);
-}
-tryFill();
-})();`;
-  return 'javascript:' + encodeURIComponent(code);
-}
-
-  // Bake credentials into both bookmarklet links
-  document.getElementById('bm-login').href = buildLoginBookmarklet(l);
-  document.getElementById('bm-security').href = buildSecurityBookmarklet(l);
-
-  // Build manual fallback answer rows
-  const pairs = [
-    [l.sel_q1, l.ans_q1],
-    [l.sel_q2, l.ans_q2],
-    [l.sel_q3, l.ans_q3],
-  ].filter(([q,a]) => q || a);
-
-  document.getElementById('run-sq-list').innerHTML = pairs.length
-    ? pairs.map(([q,a],i) => `<div class="run-sq-row"><div class="run-sq-q"><div class="run-sq-q-text">${x(q||'Q'+(i+1))}</div><div class="run-sq-a">${x(a||'—')}</div></div><button class="copy-btn" onclick="cpText(${JSON.stringify(a||'')},this)">Copy</button></div>`).join('')
-    : '<div style="color:var(--muted);font-size:0.78rem">No answers saved.</div>';
-
-  document.getElementById('run-overlay').classList.add('open');
-}
-
-function closeRun(){ document.getElementById('run-overlay').classList.remove('open'); }
-
-function openTargetUrl(){
-  window.open(_targetUrl, '_blank');
-  const btn = document.getElementById('run-url-btn');
-  btn.innerHTML = '✓ Page opened — paste your credentials';
-  btn.style.cssText = 'background:rgba(200,240,74,0.12);color:var(--accent);border:1px solid rgba(200,240,74,0.3);display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:13px;border-radius:10px;font-family:var(--serif);font-size:1rem;font-weight:800;cursor:pointer;margin-bottom:12px;letter-spacing:0.02em;';
-  setTimeout(()=>{ btn.innerHTML='<span>🌐</span><span>Step 1 — Open Login Page</span>'; btn.style.cssText=''; }, 4000);
-}
-
-function toggleRunPass(){
-  const el=document.getElementById('run-password-disp'), btn=document.getElementById('run-show-btn');
-  if(el.classList.contains('masked')){ el.textContent=_runPass; el.classList.remove('masked'); btn.textContent='Hide'; }
-  else { el.textContent='••••••••'; el.classList.add('masked'); btn.textContent='Show'; }
-}
-
-function copyField(id,btn){
-  navigator.clipboard.writeText(document.getElementById(id).textContent).then(()=>{ btn.textContent='Copied!'; btn.classList.add('copied'); setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000); });
-}
-
-function copyRunPass(btn){
-  navigator.clipboard.writeText(_runPass).then(()=>{ btn.textContent='Copied!'; btn.classList.add('copied'); setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000); });
-}
-
-function cpText(val,btn){
-  navigator.clipboard.writeText(val).then(()=>{ btn.textContent='Copied!'; btn.classList.add('copied'); setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000); });
-}
+let _runPass='',_runUsername='',_runData={};
+const _targetUrl='{{ target_url }}';
+function saveExtId(){const id=(document.getElementById('ext-id-input').value||'').trim();const pill=document.getElementById('ext-pill');if(id){localStorage.setItem('vault_ext_id',id);pill.textContent='Connected';pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';}else{localStorage.removeItem('vault_ext_id');pill.textContent='Not set';pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';}}
+function openRun(id){const l=all.find(z=>z.id===id);if(!l)return;_runPass=l.password||'';_runUsername=l.username||'';_runData=l;document.getElementById('run-label').textContent=l.label||'Login';document.getElementById('run-username').textContent=l.username||'';document.getElementById('run-password-disp').textContent='        ';document.getElementById('run-password-disp').classList.add('masked');document.getElementById('run-show-btn').textContent='Show';document.getElementById('run-status').textContent='';const savedId=localStorage.getItem('vault_ext_id')||'';document.getElementById('ext-id-input').value=savedId;const pill=document.getElementById('ext-pill');if(savedId){pill.textContent='Connected';pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';}else{pill.textContent='Not set';pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';setTimeout(()=>document.getElementById('ext-id-input').focus(),300);}const pairs=[[l.sel_q1,l.ans_q1],[l.sel_q2,l.ans_q2],[l.sel_q3,l.ans_q3]].filter(([q,a])=>q||a);const sqList=document.getElementById('run-sq-list');if(pairs.length){sqList.innerHTML=pairs.map(([q,a],i)=>'<div class="run-sq-row"><div class="run-sq-q"><div class="run-sq-q-text">'+x(q||'Q'+(i+1))+'</div><div class="run-sq-a">'+x(a||'')+'</div></div><button class="copy-btn" onclick="cpText('+JSON.stringify(a||'')+',this)">Copy</button></div>').join('');document.getElementById('run-sq-section').style.display='';}else{document.getElementById('run-sq-section').style.display='none';}document.getElementById('run-overlay').classList.add('open');}
+function closeRun(){document.getElementById('run-overlay').classList.remove('open');}
+async function doRun(){const btn=document.getElementById('run-url-btn');const status=document.getElementById('run-status');const extId=localStorage.getItem('vault_ext_id');if(!extId){status.style.color='var(--red)';status.textContent='Paste your Extension ID above and click Save first';document.getElementById('ext-id-input').focus();return;}btn.textContent='Launching...';btn.disabled=true;const payload={action:'run_login',data:{username:_runUsername,password:_runPass,sel_q1:_runData.sel_q1||'',ans_q1:_runData.ans_q1||'',sel_q2:_runData.sel_q2||'',ans_q2:_runData.ans_q2||'',sel_q3:_runData.sel_q3||'',ans_q3:_runData.ans_q3||'',target_url:_targetUrl}};try{await new Promise((resolve,reject)=>{chrome.runtime.sendMessage(extId,payload,r=>{if(chrome.runtime.lastError)reject(chrome.runtime.lastError);else resolve(r);});});status.style.color='var(--green)';status.textContent='Launched - switch to new tab and solve the captcha';}catch(e){status.style.color='var(--red)';status.textContent='Extension not found - check the ID or reinstall';window.open(_targetUrl,'_blank');}setTimeout(()=>{btn.textContent='Run - Open and Auto-Fill Everything';btn.disabled=false;},3000);}
+function toggleRunPass(){const el=document.getElementById('run-password-disp'),btn=document.getElementById('run-show-btn');if(el.classList.contains('masked')){el.textContent=_runPass;el.classList.remove('masked');btn.textContent='Hide';}else{el.textContent='        ';el.classList.add('masked');btn.textContent='Show';}}
+function copyField(id,btn){navigator.clipboard.writeText(document.getElementById(id).textContent).then(()=>{btn.textContent='Copied!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);});}
+function copyRunPass(btn){navigator.clipboard.writeText(_runPass).then(()=>{btn.textContent='Copied!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);});}
+function cpText(val,btn){navigator.clipboard.writeText(val).then(()=>{btn.textContent='Copied!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);});}
+document.getElementById('overlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal();});
+document.getElementById('run-overlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeRun();});
 </script>
 </body>
 </html>
