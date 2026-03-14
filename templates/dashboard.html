@@ -320,36 +320,14 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
     </div>
     <div class="run-body">
 
-      <!-- Extension ID box — always visible -->
-      <div id="ext-id-box" style="margin-bottom:16px;padding:12px 14px;border-radius:10px;border:1px solid var(--border2);background:var(--surface)">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:0.68rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">⚡ Chrome Extension ID</span>
-          <span id="ext-status-pill" style="font-size:0.65rem;padding:2px 8px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)">Not connected</span>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="ext-id-input" placeholder="Paste your Extension ID here…"
-            style="flex:1;background:var(--card);border:1px solid var(--border2);border-radius:7px;
-                   padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:0.78rem;outline:none">
-          <button onclick="saveExtId()"
-            style="padding:8px 14px;border-radius:7px;border:1px solid rgba(200,240,74,0.3);
-                   background:rgba(200,240,74,0.1);color:var(--accent);cursor:pointer;
-                   font-size:0.75rem;font-weight:700;white-space:nowrap">
-            Save
-          </button>
-        </div>
-        <div style="font-size:0.65rem;color:var(--muted2);margin-top:6px;line-height:1.5">
-          Chrome → <code style="color:var(--muted)">chrome://extensions</code> → Developer Mode ON → copy the ID
-        </div>
-      </div>
-
-      <!-- Open URL button -->
+      <!-- STEP 1: Open the site -->
       <button class="run-url-btn" id="run-url-btn" onclick="openTargetUrl()">
-        <span>🌐</span> <span>Open &amp; Auto-Fill Login Page</span>
+        <span>🌐</span> <span>Step 1 — Open Login Page</span>
       </button>
 
-      <!-- Credentials -->
+      <!-- STEP 2: Credentials -->
       <div class="run-section">
-        <div class="run-section-title">Credentials</div>
+        <div class="run-section-title">Step 2 — Copy &amp; Paste Credentials</div>
         <div class="run-field">
           <span class="run-field-label">Username</span>
           <span class="run-field-val" id="run-username">—</span>
@@ -361,13 +339,37 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
           <button class="show-pass-btn" id="run-show-btn" onclick="toggleRunPass()">Show</button>
           <button class="copy-btn" onclick="copyRunPass(this)">Copy</button>
         </div>
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:8px;line-height:1.6">
+          Paste into the login page → solve captcha → click <b>Sign In</b>
+        </div>
       </div>
 
-      <!-- Security Questions -->
-      <div class="run-section" id="run-sq-section">
-        <div class="run-section-title">Security Questions & Answers</div>
+      <!-- STEP 3: Bookmarklet for security questions -->
+      <div class="run-section">
+        <div class="run-section-title">Step 3 — Auto-Fill Security Questions</div>
+        <div style="font-size:0.78rem;color:var(--muted);margin-bottom:10px;line-height:1.6">
+          When the security questions page loads, click the <b>🔐 Vault Fill</b> bookmark in your browser bar — it auto-fills the answers instantly.
+        </div>
+
+        <!-- Bookmarklet drag target -->
+        <div style="background:rgba(200,240,74,0.06);border:1px dashed rgba(200,240,74,0.3);border-radius:10px;padding:14px 16px;margin-bottom:10px;text-align:center">
+          <div style="font-size:0.68rem;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.08em">Drag this to your bookmarks bar ↓</div>
+          <a id="bookmarklet-link" href="#"
+             style="display:inline-block;padding:9px 22px;border-radius:8px;background:var(--accent);
+                    color:#0c0e15;font-weight:800;font-size:0.88rem;text-decoration:none;
+                    font-family:var(--serif);letter-spacing:0.02em;cursor:grab"
+             title="Vault Fill — drag me to your bookmarks bar">
+            🔐 Vault Fill
+          </a>
+          <div style="font-size:0.65rem;color:var(--muted2);margin-top:10px;line-height:1.5">
+            One-time setup: drag the button above to your bookmarks bar.<br>
+            Then click it on the security questions page each time.
+          </div>
+        </div>
+
+        <!-- Manual fallback answers -->
+        <div style="font-size:0.68rem;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em">Or copy answers manually</div>
         <div id="run-sq-list"></div>
-        <div style="font-size:0.72rem;color:var(--muted);margin-top:6px">When the site asks a security question, find it here and copy the answer.</div>
       </div>
 
     </div>
@@ -527,172 +529,89 @@ let _runUsername = '';
 let _runData = {};
 let _targetUrl = '{{ target_url }}';
 
+function buildBookmarklet(data) {
+  const answers = [
+    { q: data.sel_q1||'', a: data.ans_q1||'' },
+    { q: data.sel_q2||'', a: data.ans_q2||'' },
+    { q: data.sel_q3||'', a: data.ans_q3||'' },
+  ].filter(function(x){ return x.a; });
+  const answersJson = JSON.stringify(answers);
+  const code = `(function(){
+var answers=${answersJson};
+function fill(el,val){var s=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');if(s&&s.set)s.set.call(el,val);else el.value=val;['input','change','keyup','blur'].forEach(function(e){el.dispatchEvent(new Event(e,{bubbles:true}));});}
+function banner(msg,ok){var old=document.getElementById('__vb__');if(old)old.remove();var b=document.createElement('div');b.id='__vb__';b.style.cssText='position:fixed;top:14px;right:14px;z-index:2147483647;padding:12px 18px;border-radius:10px;font-family:system-ui,sans-serif;font-size:13px;font-weight:600;max-width:340px;line-height:1.5;'+(ok?'background:#0d1f0d;border:1.5px solid #3dffa0;color:#3dffa0;':'background:#1f0d0d;border:1.5px solid #f06060;color:#f06060;');b.innerHTML='🔐 Vault: '+msg+' <button onclick="this.parentNode.remove()" style="float:right;background:none;border:none;color:inherit;opacity:0.5;cursor:pointer;font-size:15px;margin-left:8px">x</button>';document.body.appendChild(b);setTimeout(function(){if(b)b.remove();},8000);}
+var inputs=Array.from(document.querySelectorAll('input[type=text],input:not([type])')).filter(function(el){var s=window.getComputedStyle(el);return s.display!=='none'&&s.visibility!=='hidden'&&el.offsetParent!==null&&!el.disabled&&!el.readOnly;});
+if(!inputs.length){banner('No visible inputs found.',false);return;}
+var filled=0;var used=[];
+answers.forEach(function(pair){
+  if(!pair.q)return;
+  var qw=pair.q.toLowerCase().split(/\W+/).filter(function(w){return w.length>3;});
+  var best=null;var bs=0;
+  Array.from(document.querySelectorAll('label,p,span,div,td,li,h3,h4')).forEach(function(el){var t=(el.innerText||'').toLowerCase();if(t.length<5||t.length>300)return;var sc=qw.filter(function(w){return t.includes(w);}).length/(qw.length||1);if(sc>bs&&sc>=0.35){bs=sc;best=el;}});
+  var inp=null;
+  if(best){if(best.tagName==='LABEL'&&best.htmlFor)inp=document.getElementById(best.htmlFor);if(!inp){var c=best.closest('div,tr,td,fieldset,li,section');if(c)inp=Array.from(c.querySelectorAll('input[type=text],input:not([type])')).find(function(e){return !used.includes(e)&&e.offsetParent;});}if(!inp){var sib=best.nextElementSibling;while(sib){if(sib.matches&&sib.matches('input[type=text],input:not([type])')&&!used.includes(sib)){inp=sib;break;}var f=sib.querySelector('input[type=text],input:not([type])');if(f&&!used.includes(f)){inp=f;break;}sib=sib.nextElementSibling;}}}
+  if(inp&&!used.includes(inp)){fill(inp,pair.a);used.push(inp);filled++;}
+});
+if(filled===0){inputs.slice(0,answers.length).forEach(function(inp,i){if(answers[i]){fill(inp,answers[i].a);filled++;}});}
+banner(filled>0?filled+' answer'+(filled>1?'s':'')+' filled — click Continue':'Could not fill. Type manually.',filled>0);
+})();`;
+  return 'javascript:' + encodeURIComponent(code);
+}
+
 function openRun(id){
   const l = all.find(z=>z.id===id); if(!l) return;
   _runPass = l.password || '';
   _runUsername = l.username || '';
   _runData = l;
   document.getElementById('run-label').textContent = l.label || 'Login';
-
-  // Load saved extension ID and show status
-  const savedId = localStorage.getItem('vault_ext_id') || '';
-  const inp = document.getElementById('ext-id-input');
-  const pill = document.getElementById('ext-status-pill');
-  inp.value = savedId;
-  if (savedId) {
-    pill.textContent = '✓ Connected';
-    pill.style.cssText = 'font-size:0.65rem;padding:2px 8px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';
-  } else {
-    pill.textContent = 'Not connected';
-    pill.style.cssText = 'font-size:0.65rem;padding:2px 8px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';
-    // Highlight the input to draw attention
-    setTimeout(() => inp.focus(), 300);
-  }
   document.getElementById('run-username').textContent = l.username || '';
   document.getElementById('run-password-disp').textContent = '••••••••';
   document.getElementById('run-password-disp').classList.add('masked');
   document.getElementById('run-show-btn').textContent = 'Show';
 
-  // Build security question rows
+  // Bake this login's answers into the bookmarklet link
+  document.getElementById('bookmarklet-link').href = buildBookmarklet(l);
+
+  // Build manual fallback answer rows
   const pairs = [
     [l.sel_q1, l.ans_q1],
     [l.sel_q2, l.ans_q2],
     [l.sel_q3, l.ans_q3],
   ].filter(([q,a]) => q || a);
 
-  const sqList = document.getElementById('run-sq-list');
-  if(pairs.length){
-    sqList.innerHTML = pairs.map(([q,a],i) => `
-      <div class="run-sq-row">
-        <div class="run-sq-q">
-          <div class="run-sq-q-text">${x(q||'Security Question '+(i+1))}</div>
-          <div class="run-sq-a" id="run-sq-a-${i}">${x(a||'—')}</div>
-        </div>
-        <button class="copy-btn" onclick="copyRunSq(${i},'${(a||'').replace(/'/g,"\'")}',this)">Copy</button>
-      </div>`).join('');
-    document.getElementById('run-sq-section').style.display='';
-  } else {
-    document.getElementById('run-sq-section').style.display='none';
-  }
+  document.getElementById('run-sq-list').innerHTML = pairs.length
+    ? pairs.map(([q,a],i) => `<div class="run-sq-row"><div class="run-sq-q"><div class="run-sq-q-text">${x(q||'Q'+(i+1))}</div><div class="run-sq-a">${x(a||'—')}</div></div><button class="copy-btn" onclick="cpText(${JSON.stringify(a||'')},this)">Copy</button></div>`).join('')
+    : '<div style="color:var(--muted);font-size:0.78rem">No answers saved.</div>';
 
   document.getElementById('run-overlay').classList.add('open');
 }
 
-function closeRun(){
-  document.getElementById('run-overlay').classList.remove('open');
-}
+function closeRun(){ document.getElementById('run-overlay').classList.remove('open'); }
 
-async function openTargetUrl(){
+function openTargetUrl(){
+  window.open(_targetUrl, '_blank');
   const btn = document.getElementById('run-url-btn');
-
-  // Try to send to Chrome extension first
-  const sent = await sendToExtension();
-
-  if (sent) {
-    btn.innerHTML = '✓ Extension is auto-filling — switch to the new tab';
-    btn.style.cssText = 'background:rgba(200,240,74,0.15);color:var(--accent);border:1px solid rgba(200,240,74,0.3)';
-  } else {
-    // Fallback: just open the URL
-    window.open(_targetUrl, '_blank');
-    btn.innerHTML = '✓ Page Opened — fill credentials manually from below';
-    btn.style.cssText = 'background:rgba(91,156,246,0.1);color:var(--blue);border:1px solid rgba(91,156,246,0.25)';
-  }
-
-  setTimeout(()=>{
-    btn.innerHTML = '<span>🌐</span> <span>Run Again</span>';
-    btn.style.cssText = '';
-  }, 5000);
-}
-
-async function sendToExtension() {
-  // Send credentials to the Vault Chrome extension
-  // Extension ID is stored in localStorage after first pairing
-  const extId = localStorage.getItem('vault_ext_id');
-
-  const payload = {
-    action: "run_login",
-    data: {
-      username: _runUsername,
-      password: _runPass,
-      sel_q1: _runData.sel_q1 || '',
-      ans_q1: _runData.ans_q1 || '',
-      sel_q2: _runData.sel_q2 || '',
-      ans_q2: _runData.ans_q2 || '',
-      sel_q3: _runData.sel_q3 || '',
-      ans_q3: _runData.ans_q3 || '',
-      target_url: _targetUrl
-    }
-  };
-
-  if (extId) {
-    try {
-      await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage(extId, payload, (r) => {
-          if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-          else resolve(r);
-        });
-      });
-      return true;
-    } catch(e) {
-      console.warn('Extension not found:', e);
-    }
-  }
-
-  // Try broadcasting to any installed Vault extension
-  // User needs to pair once via the extension popup
-  return false;
-}
-
-// showExtensionPrompt removed — Extension ID box is now always visible in the Run modal
-
-function saveExtId() {
-  const id = (document.getElementById('ext-id-input')?.value || '').trim();
-  const pill = document.getElementById('ext-status-pill');
-  if (id) {
-    localStorage.setItem('vault_ext_id', id);
-    pill.textContent = '✓ Connected';
-    pill.style.cssText = 'font-size:0.65rem;padding:2px 8px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';
-  } else {
-    localStorage.removeItem('vault_ext_id');
-    pill.textContent = 'Not connected';
-    pill.style.cssText = 'font-size:0.65rem;padding:2px 8px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';
-  }
+  btn.innerHTML = '✓ Page opened — paste your credentials';
+  btn.style.cssText = 'background:rgba(200,240,74,0.12);color:var(--accent);border:1px solid rgba(200,240,74,0.3);display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:13px;border-radius:10px;font-family:var(--serif);font-size:1rem;font-weight:800;cursor:pointer;margin-bottom:12px;letter-spacing:0.02em;';
+  setTimeout(()=>{ btn.innerHTML='<span>🌐</span><span>Step 1 — Open Login Page</span>'; btn.style.cssText=''; }, 4000);
 }
 
 function toggleRunPass(){
-  const el = document.getElementById('run-password-disp');
-  const btn = document.getElementById('run-show-btn');
-  if(el.classList.contains('masked')){
-    el.textContent = _runPass;
-    el.classList.remove('masked');
-    btn.textContent = 'Hide';
-  } else {
-    el.textContent = '••••••••';
-    el.classList.add('masked');
-    btn.textContent = 'Show';
-  }
+  const el=document.getElementById('run-password-disp'), btn=document.getElementById('run-show-btn');
+  if(el.classList.contains('masked')){ el.textContent=_runPass; el.classList.remove('masked'); btn.textContent='Hide'; }
+  else { el.textContent='••••••••'; el.classList.add('masked'); btn.textContent='Show'; }
 }
 
-function copyField(id, btn){
-  const val = document.getElementById(id).textContent;
-  navigator.clipboard.writeText(val).then(()=>{
-    btn.textContent='Copied!'; btn.classList.add('copied');
-    setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);
-  });
+function copyField(id,btn){
+  navigator.clipboard.writeText(document.getElementById(id).textContent).then(()=>{ btn.textContent='Copied!'; btn.classList.add('copied'); setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000); });
 }
 
 function copyRunPass(btn){
-  navigator.clipboard.writeText(_runPass).then(()=>{
-    btn.textContent='Copied!'; btn.classList.add('copied');
-    setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);
-  });
+  navigator.clipboard.writeText(_runPass).then(()=>{ btn.textContent='Copied!'; btn.classList.add('copied'); setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000); });
 }
 
-function copyRunSq(i, val, btn){
-  navigator.clipboard.writeText(val).then(()=>{
-    btn.textContent='Copied!'; btn.classList.add('copied');
-    setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);
-  });
+function cpText(val,btn){
+  navigator.clipboard.writeText(val).then(()=>{ btn.textContent='Copied!'; btn.classList.add('copied'); setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000); });
 }
 </script>
 </body>
