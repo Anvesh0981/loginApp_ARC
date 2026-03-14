@@ -484,7 +484,38 @@ const _targetUrl='{{ target_url }}';
 function saveExtId(){const id=(document.getElementById('ext-id-input').value||'').trim();const pill=document.getElementById('ext-pill');if(id){localStorage.setItem('vault_ext_id',id);pill.textContent='Connected';pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';}else{localStorage.removeItem('vault_ext_id');pill.textContent='Not set';pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';}}
 function openRun(id){const l=all.find(z=>z.id===id);if(!l)return;_runPass=l.password||'';_runUsername=l.username||'';_runData=l;document.getElementById('run-label').textContent=l.label||'Login';document.getElementById('run-username').textContent=l.username||'';document.getElementById('run-password-disp').textContent='        ';document.getElementById('run-password-disp').classList.add('masked');document.getElementById('run-show-btn').textContent='Show';document.getElementById('run-status').textContent='';const savedId=localStorage.getItem('vault_ext_id')||'';document.getElementById('ext-id-input').value=savedId;const pill=document.getElementById('ext-pill');if(savedId){pill.textContent='Connected';pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid rgba(61,255,160,0.3);color:var(--green);background:rgba(61,255,160,0.07)';}else{pill.textContent='Not set';pill.style.cssText='font-size:0.65rem;padding:2px 10px;border-radius:99px;border:1px solid var(--border2);color:var(--muted)';setTimeout(()=>document.getElementById('ext-id-input').focus(),300);}const pairs=[[l.sel_q1,l.ans_q1],[l.sel_q2,l.ans_q2],[l.sel_q3,l.ans_q3]].filter(([q,a])=>q||a);const sqList=document.getElementById('run-sq-list');if(pairs.length){sqList.innerHTML=pairs.map(([q,a],i)=>'<div class="run-sq-row"><div class="run-sq-q"><div class="run-sq-q-text">'+x(q||'Q'+(i+1))+'</div><div class="run-sq-a">'+x(a||'')+'</div></div><button class="copy-btn" onclick="cpText('+JSON.stringify(a||'')+',this)">Copy</button></div>').join('');document.getElementById('run-sq-section').style.display='';}else{document.getElementById('run-sq-section').style.display='none';}document.getElementById('run-overlay').classList.add('open');}
 function closeRun(){document.getElementById('run-overlay').classList.remove('open');}
-async function doRun(){const btn=document.getElementById('run-url-btn');const status=document.getElementById('run-status');const extId=localStorage.getItem('vault_ext_id');if(!extId){status.style.color='var(--red)';status.textContent='Paste your Extension ID above and click Save first';document.getElementById('ext-id-input').focus();return;}btn.textContent='Launching...';btn.disabled=true;const payload={action:'run_login',data:{username:_runUsername,password:_runPass,sel_q1:_runData.sel_q1||'',ans_q1:_runData.ans_q1||'',sel_q2:_runData.sel_q2||'',ans_q2:_runData.ans_q2||'',sel_q3:_runData.sel_q3||'',ans_q3:_runData.ans_q3||'',target_url:_targetUrl}};try{await new Promise((resolve,reject)=>{chrome.runtime.sendMessage(extId,payload,r=>{if(chrome.runtime.lastError)reject(chrome.runtime.lastError);else resolve(r);});});status.style.color='var(--green)';status.textContent='Launched - switch to new tab and solve the captcha';}catch(e){status.style.color='var(--red)';status.textContent='Extension not found - check the ID or reinstall';window.open(_targetUrl,'_blank');}setTimeout(()=>{btn.textContent='Run - Open and Auto-Fill Everything';btn.disabled=false;},3000);}
+async function doRun(){
+  const btn = document.getElementById('run-url-btn');
+  const status = document.getElementById('run-status');
+  const loginId = _runData.id;
+  if (!loginId) { status.textContent = 'No login selected'; return; }
+
+  btn.textContent = 'Launching browser on server…';
+  btn.disabled = true;
+  status.style.color = 'var(--muted)';
+  status.textContent = 'Starting Playwright…';
+
+  const evtSource = new EventSource('/api/run/' + loginId);
+
+  evtSource.addEventListener('status', e => {
+    const d = JSON.parse(e.data);
+    status.style.color = d.done ? 'var(--green)' : 'var(--accent)';
+    status.textContent = d.msg;
+    if (d.waiting_captcha) btn.textContent = 'Waiting for you to solve captcha…';
+    if (d.done) { btn.textContent = 'Run — Open & Auto-Fill Everything'; btn.disabled = false; evtSource.close(); }
+  });
+
+  evtSource.addEventListener('error', e => {
+    try { const d = JSON.parse(e.data); status.style.color='var(--red)'; status.textContent='✗ '+d.msg; } catch(err) {}
+    btn.textContent = 'Run — Open & Auto-Fill Everything'; btn.disabled = false; evtSource.close();
+  });
+
+  evtSource.onerror = () => {
+    if (evtSource.readyState === EventSource.CLOSED) return;
+    status.style.color = 'var(--red)'; status.textContent = 'Connection lost';
+    btn.textContent = 'Run — Open & Auto-Fill Everything'; btn.disabled = false; evtSource.close();
+  };
+}
 function toggleRunPass(){const el=document.getElementById('run-password-disp'),btn=document.getElementById('run-show-btn');if(el.classList.contains('masked')){el.textContent=_runPass;el.classList.remove('masked');btn.textContent='Hide';}else{el.textContent='        ';el.classList.add('masked');btn.textContent='Show';}}
 function copyField(id,btn){navigator.clipboard.writeText(document.getElementById(id).textContent).then(()=>{btn.textContent='Copied!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);});}
 function copyRunPass(btn){navigator.clipboard.writeText(_runPass).then(()=>{btn.textContent='Copied!';btn.classList.add('copied');setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2000);});}
