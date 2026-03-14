@@ -1,3 +1,4 @@
+
 FROM python:3.11-bookworm
 
 RUN apt-get update && apt-get install -y \
@@ -13,5 +14,4 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY . .
 
-ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["gunicorn app:app --bind 0.0.0.0:${PORT:-8080} --workers 2 --timeout 300"]
+CMD ["python", "server.py"]
