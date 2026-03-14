@@ -519,7 +519,7 @@ def submit_captcha(lid):
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "No active session for this login"})
 # ══════════════════════════════════════════════════════════════════════════════
-@app.route("/api/run/<int:lid>", methods=["POST"])
+@app.route("/api/run/<int:lid>", methods=["GET", "POST"])
 @require_user
 def run_login(lid):
     """
