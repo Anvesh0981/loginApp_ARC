@@ -280,24 +280,7 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
       </div>
 
       <div class="sec-heading">🛡 Security Questions</div>
-
-      {% for n in [1,2,3] %}
-      <div class="sq-block">
-        <div class="f" style="margin-bottom:10px">
-          <label style="font-size:0.72rem;color:var(--text);text-transform:none;letter-spacing:0;font-weight:600">Select Security Question {{ n }}*</label>
-          <select id="f-sq{{ n }}" class="sq-select">
-            <option value="">Select Security Question {{ n }}</option>
-            {% for q in question_options %}
-            <option value="{{ q }}">{{ q }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="f">
-          <label style="font-size:0.72rem;color:var(--text);text-transform:none;letter-spacing:0;font-weight:600">Answer to Security Question {{ n }}*</label>
-          <input id="f-a{{ n }}" placeholder="" autocomplete="off">
-        </div>
-      </div>
-      {% endfor %}
+      <div id="sq-blocks-container"></div>
 
       <div class="f" style="margin-top:14px"><label>Notes</label><textarea id="f-notes" rows="2" placeholder="Optional notes…"></textarea></div>
     </div>
@@ -379,6 +362,51 @@ header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-
 
 <script>
 // SQ_SHORT replaced by dynamic question text from sel_q1/sel_q2/sel_q3
+// Security questions — hardcoded in JS so they always render even if Jinja fails
+const QUESTIONS = [
+  "What is your mother's maiden name?",
+  "What was the name of your first/current/favorite pet?",
+  "What was your first car?",
+  "What elementary school did you attend?",
+  "What is the name of the town/city where you were born?",
+  "What is the name of the road/street you grew up on?",
+  "What is your least favorite food?",
+  "What was the first company that you worked for?",
+  "What is your favorite food?",
+  "What high school did you attend?",
+  "Where did you meet your spouse?",
+  "What is your sibling's middle name?",
+  "Who was your childhood hero?",
+  "In what city or town was your first job?",
+  "What is the name of a college you applied to but didn't attend?",
+];
+
+function buildSqBlocks(sel1='', sel2='', sel3='') {
+  const container = document.getElementById('sq-blocks-container');
+  if (!container) return;
+  const opts = QUESTIONS.map(q => `<option value="${x(q)}">${x(q)}</option>`).join('');
+  container.innerHTML = [1,2,3].map(n => {
+    const selVal = n===1?sel1 : n===2?sel2 : sel3;
+    return `<div class="sq-block">
+      <div class="f" style="margin-bottom:10px">
+        <label style="font-size:0.72rem;color:var(--text);text-transform:none;letter-spacing:0;font-weight:600">Select Security Question ${n}*</label>
+        <select id="f-sq${n}" class="sq-select">
+          <option value="">Select Security Question ${n}</option>
+          ${opts}
+        </select>
+      </div>
+      <div class="f">
+        <label style="font-size:0.72rem;color:var(--text);text-transform:none;letter-spacing:0;font-weight:600">Answer to Security Question ${n}*</label>
+        <input id="f-a${n}" placeholder="" autocomplete="off">
+      </div>
+    </div>`;
+  }).join('');
+  // Set selected values
+  if(sel1) document.getElementById('f-sq1').value = sel1;
+  if(sel2) document.getElementById('f-sq2').value = sel2;
+  if(sel3) document.getElementById('f-sq3').value = sel3;
+}
+
 let all = [];
 
 (async()=>{ await loadAll(); })();
@@ -450,10 +478,20 @@ function renderGrid(list){
 }
 
 function openAdd(){
-  document.getElementById('m-title').textContent='Add Login';
-  document.getElementById('edit-id').value='';
-  clearForm();
-  document.getElementById('overlay').classList.add('open');
+  try {
+    const ov = document.getElementById('overlay');
+    if(!ov){ alert('Modal not found — try refreshing the page'); return; }
+    const title = document.getElementById('m-title');
+    if(title) title.textContent='Add Login';
+    const eid = document.getElementById('edit-id');
+    if(eid) eid.value='';
+    buildSqBlocks();
+    clearForm();
+    ov.classList.add('open');
+  } catch(e) {
+    alert('Error opening modal: ' + e.message + '\n\nTry refreshing the page.');
+    console.error('openAdd error:', e);
+  }
 }
 function openEdit(id){
   const l=all.find(z=>z.id===id); if(!l)return;
@@ -463,18 +501,23 @@ function openEdit(id){
   document.getElementById('f-user').value=l.username||'';
   document.getElementById('f-pass').value=l.password||'';
   document.getElementById('f-status').value=l.status||'pending';
-  document.getElementById('f-sq1').value=l.sel_q1||'';
+  buildSqBlocks(l.sel_q1||'', l.sel_q2||'', l.sel_q3||'');
   document.getElementById('f-a1').value=l.ans_q1||'';
-  document.getElementById('f-sq2').value=l.sel_q2||'';
   document.getElementById('f-a2').value=l.ans_q2||'';
-  document.getElementById('f-sq3').value=l.sel_q3||'';
   document.getElementById('f-a3').value=l.ans_q3||'';
   document.getElementById('f-date').value=l.target_date||'';
   document.getElementById('f-notes').value=l.notes||'';
   document.getElementById('overlay').classList.add('open');
 }
 function closeModal(){document.getElementById('overlay').classList.remove('open');}
-function clearForm(){['f-label','f-user','f-pass','f-sq1','f-a1','f-sq2','f-a2','f-sq3','f-a3','f-date','f-notes'].forEach(id=>document.getElementById(id).value='');document.getElementById('f-status').value='pending';}
+function clearForm(){
+  ['f-label','f-user','f-pass','f-sq1','f-a1','f-sq2','f-a2','f-sq3','f-a3','f-date','f-notes'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.value='';
+  });
+  const st=document.getElementById('f-status');
+  if(st) st.value='pending';
+}
 function togglePass(){const i=document.getElementById('f-pass');i.type=i.type==='password'?'text':'password';}
 
 async function saveLogin(){
@@ -484,12 +527,12 @@ async function saveLogin(){
     username:document.getElementById('f-user').value.trim(),
     password:document.getElementById('f-pass').value,
     status:document.getElementById('f-status').value,
-    sel_q1:document.getElementById('f-sq1').value,
-    ans_q1:document.getElementById('f-a1').value.trim(),
-    sel_q2:document.getElementById('f-sq2').value,
-    ans_q2:document.getElementById('f-a2').value.trim(),
-    sel_q3:document.getElementById('f-sq3').value,
-    ans_q3:document.getElementById('f-a3').value.trim(),
+    sel_q1:(document.getElementById('f-sq1')||{}).value||'',
+    ans_q1:(document.getElementById('f-a1')||{value:''}).value.trim(),
+    sel_q2:(document.getElementById('f-sq2')||{}).value||'',
+    ans_q2:(document.getElementById('f-a2')||{value:''}).value.trim(),
+    sel_q3:(document.getElementById('f-sq3')||{}).value||'',
+    ans_q3:(document.getElementById('f-a3')||{value:''}).value.trim(),
     target_date:document.getElementById('f-date').value,
     notes:document.getElementById('f-notes').value.trim(),
   };
