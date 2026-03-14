@@ -531,6 +531,28 @@ def admin_logs():
 # ══════════════════════════════════════════════════════════════════════════════
 #  DEBUG + VNC + RUN
 # ══════════════════════════════════════════════════════════════════════════════
+@app.route("/debug/screenshots")
+def debug_screenshots():
+    """List all debug screenshots taken during automation runs."""
+    import glob
+    screenshot_dir = "/tmp/vault_screenshots"
+    if not os.path.isdir(screenshot_dir):
+        return jsonify({"screenshots": [], "msg": "No screenshots directory yet"})
+    files = sorted(glob.glob(f"{screenshot_dir}/*.png"), reverse=True)
+    return jsonify({
+        "screenshots": [os.path.basename(f) for f in files[:20]],
+        "count": len(files)
+    })
+
+@app.route("/debug/screenshots/<filename>")
+def debug_screenshot_file(filename):
+    """Serve a specific debug screenshot."""
+    from flask import send_file
+    path = f"/tmp/vault_screenshots/{filename}"
+    if not os.path.isfile(path):
+        return "Not found", 404
+    return send_file(path, mimetype="image/png")
+
 @app.route("/debug/playwright")
 def debug_playwright():
     """Test Playwright launch directly — shows result in browser."""
@@ -737,6 +759,39 @@ def run_login(lid):
             os.environ["DISPLAY"] = ":99"
             os.putenv("DISPLAY", ":99")
 
+            # ── Screenshot dir for debugging ──────────────────────────
+            SCREENSHOT_DIR = "/tmp/vault_screenshots"
+            os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+            def take_screenshot(page, step_name):
+                """Save a debug screenshot with timestamp."""
+                try:
+                    ts = int(time.time())
+                    path = f"{SCREENSHOT_DIR}/{ts}_{step_name}.png"
+                    page.screenshot(path=path, full_page=True)
+                    print(f"[Vault] Screenshot saved: {path}", flush=True)
+                except Exception as e:
+                    print(f"[Vault] Screenshot failed ({step_name}): {e}", flush=True)
+
+            # ── Retry wrapper for page.goto ───────────────────────────
+            def safe_goto(page, url, retries=3):
+                """Retry page navigation up to N times on failure."""
+                for attempt in range(retries):
+                    try:
+                        print(f"[Vault] Navigation attempt {attempt + 1}/{retries}: {url}", flush=True)
+                        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                        # Verify the page actually loaded something
+                        page.wait_for_load_state("domcontentloaded", timeout=15000)
+                        print(f"[Vault] Page loaded successfully", flush=True)
+                        return True
+                    except Exception as e:
+                        print(f"[Vault] Navigation attempt {attempt + 1} failed: {e}", flush=True)
+                        take_screenshot(page, f"nav_retry_{attempt + 1}")
+                        if attempt < retries - 1:
+                            time.sleep(3)
+                print(f"[Vault] All {retries} navigation attempts failed", flush=True)
+                return False
+
             with sync_playwright() as pw:
                 browser = pw.chromium.launch(
                     headless=False,
@@ -753,23 +808,17 @@ def run_login(lid):
                 )
                 page = context.new_page()
 
-                # ── Open login page ───────────────────────────────────────
-                print(f"[Vault] Opening {TARGET_URL}", flush=True)
-                page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(2000)
+                # ── FIX 1: Retry navigation to target URL ─────────────
+                if not safe_goto(page, TARGET_URL):
+                    take_screenshot(page, "final_nav_failure")
+                    print("[Vault] FATAL: Could not open target URL after retries", flush=True)
+                    page.wait_for_timeout(1800000)
+                    browser.close()
+                    return
 
-                # ── Fill username ─────────────────────────────────────────
-                def js_fill(selector, value):
-                    page.evaluate("""([sel, val]) => {
-                        const el = document.querySelector(sel);
-                        if (!el) return;
-                        const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
-                        if (s) s.call(el, val); else el.value = val;
-                        ['focus','keydown','keypress','input','keyup','change','blur'].forEach(e =>
-                            el.dispatchEvent(new Event(e, {bubbles:true, cancelable:true}))
-                        );
-                    }""", [selector, value])
+                take_screenshot(page, "01_page_loaded")
 
+                # ── JS fill helper (native setter for React/Angular) ──
                 def js_fill_handle(handle, value):
                     page.evaluate("""([el, val]) => {
                         const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
@@ -779,29 +828,76 @@ def run_login(lid):
                         );
                     }""", [handle, value])
 
-                # Username = first non-password/hidden input before the password field
-                all_inputs = page.query_selector_all("input")
-                pass_el = page.query_selector('input[type="password"]')
-                pass_idx = next((i for i,el in enumerate(all_inputs) if el==pass_el), 999)
+                # ── FIX 2: wait_for_selector before interacting ───────
+                # Wait for at least one input and the password field to exist
+                try:
+                    page.wait_for_selector('input', state="attached", timeout=30000)
+                    print("[Vault] Input elements found on page", flush=True)
+                except Exception as e:
+                    print(f"[Vault] No input elements found: {e}", flush=True)
+                    take_screenshot(page, "no_inputs_found")
+                    page.wait_for_timeout(1800000)
+                    browser.close()
+                    return
 
-                user_el = next((
-                    el for i,el in enumerate(all_inputs)
-                    if i < pass_idx and
-                    (el.get_attribute("type") or "text").lower() not in
-                    ["hidden","submit","button","checkbox","radio","file","image"]
-                ), None)
+                # Wait specifically for password field (confirms login form is ready)
+                try:
+                    page.wait_for_selector('input[type="password"]', state="attached", timeout=30000)
+                    print("[Vault] Password field found — login form is ready", flush=True)
+                except Exception as e:
+                    print(f"[Vault] Password field not found: {e}", flush=True)
+                    take_screenshot(page, "no_password_field")
+                    # Continue anyway — some sites load password field dynamically
+
+                # Small pause for any late-loading JS
+                page.wait_for_timeout(1500)
+
+                # ── FIX 3: Use locator() API with auto-wait ──────────
+                # Username = first non-password/hidden text input before the password field
+                all_inputs = page.locator("input").all()
+                pass_loc = page.locator('input[type="password"]')
+                pass_el = pass_loc.first.element_handle() if pass_loc.count() > 0 else None
+
+                # Find password index in DOM order
+                pass_idx = 999
+                input_handles = []
+                for i, loc in enumerate(all_inputs):
+                    handle = loc.element_handle()
+                    input_handles.append(handle)
+                    if pass_el and handle == pass_el:
+                        pass_idx = i
+
+                user_el = None
+                for i, handle in enumerate(input_handles):
+                    if i >= pass_idx:
+                        break
+                    try:
+                        t = (handle.get_attribute("type") or "text").lower()
+                    except Exception:
+                        t = "text"
+                    if t in ["hidden", "submit", "button", "checkbox", "radio", "file", "image"]:
+                        continue
+                    user_el = handle
+                    break
 
                 if user_el:
                     js_fill_handle(user_el, login["username"])
-                    print(f"[Vault] Username filled", flush=True)
+                    print("[Vault] Username filled", flush=True)
+                else:
+                    print("[Vault] WARNING: Could not find username input", flush=True)
+                    take_screenshot(page, "no_username_field")
 
-                # ── Fill password ─────────────────────────────────────────
+                # ── Fill password ─────────────────────────────────────
                 page.wait_for_timeout(400)
                 if pass_el:
                     js_fill_handle(pass_el, login["password"])
-                    print(f"[Vault] Password filled", flush=True)
+                    print("[Vault] Password filled", flush=True)
+                else:
+                    print("[Vault] WARNING: Could not find password input", flush=True)
 
-                # ── Wait for security questions page ──────────────────────
+                take_screenshot(page, "02_credentials_filled")
+
+                # ── Wait for security questions page ──────────────────
                 # (user solves captcha and clicks Sign In in the VNC viewer)
                 print("[Vault] Waiting for security questions page...", flush=True)
                 try:
@@ -812,13 +908,15 @@ def run_login(lid):
                     print("[Vault] Security questions page detected!", flush=True)
                 except Exception:
                     print("[Vault] Timed out waiting for security questions", flush=True)
+                    take_screenshot(page, "sq_timeout")
                     page.wait_for_timeout(1800000)
                     browser.close()
                     return
 
                 page.wait_for_timeout(1200)
+                take_screenshot(page, "03_security_questions_page")
 
-                # ── Fill security answers ─────────────────────────────────
+                # ── Fill security answers ─────────────────────────────
                 answers = [
                     login.get("ans_q1") or "",
                     login.get("ans_q2") or "",
@@ -827,21 +925,29 @@ def run_login(lid):
                 answers = [a for a in answers if a.strip()]
 
                 if answers:
-                    all_inputs_now = page.query_selector_all("input")
+                    # Re-query inputs on the new page using locator() API
+                    page.wait_for_selector('input', state="attached", timeout=15000)
+                    page.wait_for_timeout(800)
+
+                    all_inputs_now = page.locator("input").all()
                     answer_boxes = []
-                    for el in all_inputs_now:
-                        t = (el.get_attribute("type") or "text").lower()
-                        # Exclude truly non-fillable types only
-                        if t in ["hidden","submit","button","checkbox","radio","file","image","reset"]:
-                            continue
-                        # Skip username field
+                    for loc in all_inputs_now:
                         try:
-                            val = el.input_value() or ""
-                            if val.strip() == login["username"].strip():
+                            el = loc.element_handle()
+                            t = (el.get_attribute("type") or "text").lower()
+                            # Exclude truly non-fillable types only
+                            if t in ["hidden", "submit", "button", "checkbox", "radio", "file", "image", "reset"]:
                                 continue
+                            # Skip username field (may still be on page)
+                            try:
+                                val = loc.input_value(timeout=2000) or ""
+                                if val.strip() == login["username"].strip():
+                                    continue
+                            except Exception:
+                                pass
+                            answer_boxes.append(el)
                         except Exception:
-                            pass
-                        answer_boxes.append(el)
+                            continue
 
                     print(f"[Vault] Found {len(answer_boxes)} answer box(es)", flush=True)
 
@@ -853,10 +959,28 @@ def run_login(lid):
                             print(f"[Vault] Answer {i+1} filled", flush=True)
                         except Exception as e:
                             print(f"[Vault] Answer {i+1} failed: {e}", flush=True)
+                            take_screenshot(page, f"answer_{i+1}_failed")
 
+                    take_screenshot(page, "04_answers_filled")
                     print(f"[Vault] {filled} answer(s) filled. User can now click Continue.", flush=True)
 
-                # ── Keep browser open for user to take over ───────────────
+                # ── FIX 4: Detect login success/failure ───────────────
+                # Check if we ended up somewhere meaningful
+                current_url = page.url
+                print(f"[Vault] Current URL: {current_url}", flush=True)
+                # Check for common error indicators
+                try:
+                    error_visible = page.locator("text=incorrect").or_(
+                        page.locator("text=invalid")).or_(
+                        page.locator("text=error")).or_(
+                        page.locator("text=failed"))
+                    if error_visible.count() > 0 and error_visible.first.is_visible():
+                        print("[Vault] WARNING: Possible error detected on page", flush=True)
+                        take_screenshot(page, "possible_error_detected")
+                except Exception:
+                    pass
+
+                # ── Keep browser open for user to take over ───────────
                 page.wait_for_timeout(1800000)  # 30 minutes
                 browser.close()
 
@@ -864,6 +988,11 @@ def run_login(lid):
             import traceback
             print(f"[Vault] Error: {e}", flush=True)
             print(traceback.format_exc(), flush=True)
+            # Try to capture final error screenshot
+            try:
+                take_screenshot(page, "fatal_error")
+            except Exception:
+                pass
 
     # Kill any existing browser session for this user
     existing = _browser_sessions.pop(session["key_id"], None)
